@@ -42,3 +42,9 @@ PoweredUpAM state involves closing control communicaitons to devices in preparat
 
 Exiting PoweredUpAM states returns the observatory to IdlePM.
 
+-----------------------------------------------------------------
+PROGRAM PARTS
+
+telescopiumMain.py is the main program it runs as a endless loop until terminated of closes due to PANIC
+
+telescopium.py is the include file with classes for Observatory, DCPowerSwitch, ParkDetector, DomeController, WxMonitor, Mount, MainFiler, MainCamera, Guider, and Focuser 
