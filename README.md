@@ -48,3 +48,9 @@ PROGRAM PARTS
 telescopiumMain.py is the main program it runs as a endless loop until terminated or closes due to PANIC
 
 telescopium.py is the include file with classes for Observatory, DCPowerSwitch, ParkDetector, DomeController, WxMonitor, Mount, MainFiler, MainCamera, Guider, and Focuser 
+
+-----------------------------------------------------------------
+Credits
+
+The packet passing function to TheSkyX is inspired from  https://github.com/RMcDOttawa/pySkyDarks3.git 
+
