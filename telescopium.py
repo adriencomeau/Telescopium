@@ -1,4 +1,3 @@
-import datetime
 import io
 import numpy as np
 import os
@@ -13,10 +12,12 @@ import random
 import math
 import numpy
 import matplotlib.pyplot as plt
+import sys
+import traceback
+#from datetime import datetime
+import datetime
 
-from Validators import Validators
-
-# from astropy.coordinates import FK5
+from astropy.coordinates import FK5
 from astropy.time import Time
 from astropy.coordinates import AltAz
 from astropy.coordinates import EarthLocation
@@ -27,18 +28,17 @@ from astropy.coordinates import SkyCoord
 from astropy.visualization import astropy_mpl_style, quantity_support
 import astropy.units as u
 
-
 plt.style.use(astropy_mpl_style)
 quantity_support()
 
-filePathLog = '.'
+filePathLog = '/home/acomeau/Library/Telescopium/'
+
+currentFuncName = lambda n=0: sys._getframe(n + 1).f_code.co_name
 
 #############################################################################
 #
 # Observatory Class
 #
-
-
 class Observatory:
     def __init__(self):
         self.dcPowerSwitchPortOpen       = False
@@ -49,254 +49,1355 @@ class Observatory:
         self.wxBackgroundTaskStarted     = False
 
         self.deviceKind = 'Observatory'
-        self.debugLevl = False
+        self.verboseLevel = 1
         self.debugCommLevel = False
-        self.paceDelay = 1
-
         self.currentState = 'PreCheck';
 
+    #############################################################################
+    # Method
+    #
+    def getMainControl(self):
+        self.mainControl = {}
 
-    def getTelescopiumMainControl(self) -> (dict):
-        telescopiumMainControl = {}
         #############################################################################
         # debug Level Control
-        telescopiumMainControl['debugLevel']            = True      # (True) True to log debugging information
-        telescopiumMainControl['debugCommLevel']        = False     # (False) True to log serial traffic
+        self.mainControl['stopTelescopium']       = False       # json active while running
+        self.mainControl['verboseLevel']          = 1           # json active while running
+        self.mainControl['debugCommLevel']        = False       # json active while running
 
         #############################################################################
         # Serial port pacing
-        telescopiumMainControl['serialPortPaceDelay']   = 0.1       # (0.1) 0.1 sec pause between serial port commends
+        self.mainControl['serialPortPaceDelay']    = 0.1          # json active while running
+        self.mainControl['theSkyXPaceDelay']       = 0.1          # json active while running
 
         #############################################################################
         # Application suport
-        telescopiumMainControl['getNewInstance']        = True      # (True) Get new instances of apps (Cheese/SkyX etc)
+        self.mainControl['getNewInstance']        = True
 
-        telescopiumMainControl['sleepForAllOff']        = 30        # (30)
-        telescopiumMainControl['sleepForAllOn']         = 10        # (10)
-        telescopiumMainControl['sleepForMount']         = 10        # (10)
-        telescopiumMainControl['sleepAtLoopEnd']        = 2        # (10)
+        self.mainControl['sleepForAllOff']        = 30          # json active while running
+        self.mainControl['sleepForAllOn']         = 10          # json active while running
+        self.mainControl['sleepForMount']         = 10          # json active while running
+        self.mainControl['sleepAtLoopEnd']        = 10          # json active while running
 
         #############################################################################
         # Run Control
-        telescopiumMainControl['normalScheduling']      = True      # (True) True to have telescopium use real night times
-        telescopiumMainControl['manualObservation']     = False     # (False) not used
+        self.mainControl['normalScheduling']      = True
+        self.mainControl['manualObservation']     = False
 
-        telescopiumMainControl['justPowerOn']           = False     # (False)
-        telescopiumMainControl['leavePowerOn']          = False     # (False)
-        telescopiumMainControl['leaveOpen']             = False     # (False)
-        telescopiumMainControl['leaveLightOn']          = True      # (True)
-        telescopiumMainControl['allowOpenInBadWx']      = False     # (False)
+        self.mainControl['justPowerOn']           = False       # json active while running
+        self.mainControl['leavePowerOn']          = False       # json active while running
+        self.mainControl['leaveOpen']             = False       # json active while running
+        self.mainControl['leaveLightOn']          = True        # json active while running
+        self.mainControl['allowOpenInBadWx']      = False       # json active while running
 
-        telescopiumMainControl['lookForJobs']           = True      # (True)
+        self.mainControl['lookForJobs']           = True        # json active while running
 
-        telescopiumMainControl['takeBias']              = False     # (False)
-        telescopiumMainControl['forceTakeBias']         = False     # (False)
-        telescopiumMainControl['numbBiasExp']           = 50        # (50)
+        self.mainControl['sunDownDegrees']        = -18         # json active while running
+        self.mainControl['sunDownDegrees']        = -12         # json active while running
+        self.mainControl['sunDownDegrees']        = -6         # json active while running
+        self.mainControl['moonDownDegrees']       = -5          # json active while running
 
-        telescopiumMainControl['sunDownDegrees']        = -18       # (False)
-        telescopiumMainControl['moonDownDegrees']       = -5        # (False)
+        self.mainControl['takeBias']              = False
+        self.mainControl['takeDarks']             = False
 
-        telescopiumMainControl['takeDarks']             = False     # (False)
-        telescopiumMainControl['numbDarkExp']           = 5
-        telescopiumMainControl['darkExpRange']          = [300,600,1200]
+        self.mainControl['numbBiasExp']           = 50
+        self.mainControl['numbDarkExp']           = 12*2
+        self.mainControl['darkExpRange']          = [300]
 
-        telescopiumMainControl['takeFlat']              = False     # (False)
-        telescopiumMainControl['flatSpotAltitude']      = 75        # (75)
+        self.mainControl['takeFlat']              = False
+        self.mainControl['flatSpotAltitude']      = 75
 
         #############################################################################
         # Camera Cooler Control
-        telescopiumMainControl['deltaTemp']             = 30                # Max delta T
-        telescopiumMainControl['a_list']                = [-20,-10,0]       # .
-        telescopiumMainControl['b_list']                = [0,0,-10,-20]     # .
-        telescopiumMainControl['waitForTemp']           = True
-
-        #############################################################################
-        # filter Control
-        #telescopiumMainControl['filterKind']            = "OSC"     # ('OSC')
+        self.mainControl['deltaTemp']               = 30
+        self.mainControl['a_list']                  = [-20,-10,0]
+        self.mainControl['b_list']                  = [0,0,-10,-20]
+        self.mainControl['waitTimeMin']             = 7
 
         #############################################################################
         # Focuser Control
-        telescopiumMainControl['focStepInt']            = 4610      # (4852)
-        telescopiumMainControl['focStepSlope']          = -26.5     # (0)
-        telescopiumMainControl['numbDwell']             = 10     # (0)
-        telescopiumMainControl['positionMax']           = 9000
+        self.mainControl['telescopiumFocuserDataSet']       = 'telescopiumFocuser.ods'
+        self.mainControl['telescopiumPointingDataSet']      = 'telescopiumPointing.ods'
+        self.mainControl['telescopiumWorkList']             = 'telescopiumWorkList.ods'
+        self.mainControl['numbDwell']               = 10          # json active while running
+        self.mainControl['positionMax']             = 9000        # json active while running
+        
         #############################################################################
         # Observatory Location
-        telescopiumMainControl['lat']                   = '45d04m57s'
-        telescopiumMainControl['lon']                   = '-75d42m33s'
+        self.mainControl['lat']                     = '45d04m57s'
+        self.mainControl['lon']                     = '-75d42m33s'
 
-        telescopiumMainControl['homeLocAlt']            = 37.697
-        telescopiumMainControl['homeLocAz']             = 219.191
+        self.mainControl['homeLocAlt']              = 37.697      # json active while running
+        self.mainControl['homeLocAz']               = 219.191     # json active while running
 
         #############################################################################
         # Avoid Sun, Horizon, Wx threshold
-        telescopiumMainControl['minimumSafeToHomeAngle']      = 20
-        telescopiumMainControl['usableHorizon']               = 30
-        telescopiumMainControl['wxMonitorTempThreshold']      = 14
+        self.mainControl['minimumSafeToHomeAngle']  = 20          # json active while running
+        self.mainControl['usableHorizon']           = 30          # json active while running
+        self.mainControl['wxMonitorTempThreshold']  = 15          # json active while running
+
+        self.mainControl['workLoadSearchMethon']    = 'maxAlt'    # json active while running
+        self.mainControl['maxExposureBlock_hr']     = 0.75
 
         #############################################################################
         # Set Com Ports
         if platform.system() == "Linux" :
-            telescopiumMainControl['dcPowerSwitchSerialPortStr']    ='/dev/K8090'
-            telescopiumMainControl['parkDetectorSerialPortStr']     ='/dev/ParkDetector'
-            telescopiumMainControl['wxMonitorSerialPortStr']        ='/dev/WxMonitor'
-            telescopiumMainControl['domeControllerSerialPortStr']   ='/dev/DomeController'
-            telescopiumMainControl['telescopiumLibraryPath']        = '/home/acomeau/Library/Telescopium/'
-            telescopiumMainControl['webCamProc']                    = 'cheese'
-            telescopiumMainControl['webCamApp']                     = '/bin/cheese'
-            telescopiumMainControl['theSkyProc']                    = 'TheSkyX'
-            telescopiumMainControl['theSkyApp']                     = '/home/acomeau/TheSkyX/TheSkyX'
+            self.mainControl['dcPowerSwitchSerialPortStr']    ='/dev/K8090'
+            self.mainControl['parkDetectorSerialPortStr']     ='/dev/ParkDetector'
+            self.mainControl['wxMonitorSerialPortStr']        ='/dev/WxMonitor'
+            self.mainControl['domeControllerSerialPortStr']   ='/dev/DomeController'
+            self.mainControl['telescopiumLibraryPath']        = '/home/acomeau/Library/Telescopium/'
+            self.mainControl['webCamProc']                    = 'cheese'
+            self.mainControl['webCamApp']                     = '/bin/cheese'
+            self.mainControl['theSkyProc']                    = 'TheSkyX'
+            self.mainControl['theSkyApp']                     = '/home/acomeau/TheSkyX13507/TheSkyX'
         else :
-            telescopiumMainControl['dcPowerSwitchSerialPortStr']    ='COM12'
-            telescopiumMainControl['parkDetectorSerialPortStr']     ='COM5'
-            telescopiumMainControl['wxMonitorSerialPortStr']        ='COM9'
-            telescopiumMainControl['domeControllerSerialPortStr']   ='COM11'
-            telescopiumMainControl['telescopiumLibraryPath']        = 'C:/Users/Adrien/Documents/Library/Telescopium/'
-            telescopiumMainControl['webCamProc']                    = 'LogitechCamera.exe'
-            telescopiumMainControl['webCamApp']                     = 'C:/Program Files (x86)/Common Files/LogiShrd/LogiUCDpp/LogitechCamera.exe'
-            telescopiumMainControl['theSkyProc']                    = 'TheSky64.exe'
-            telescopiumMainControl['theSkyApp']                     = 'C:/Program Files (x86)/Software Bisque/TheSkyX Professional Edition/TheSky64/TheSky64.exe'
+            self.mainControl['dcPowerSwitchSerialPortStr']    ='COM12'
+            self.mainControl['parkDetectorSerialPortStr']     ='COM5'
+            self.mainControl['wxMonitorSerialPortStr']        ='COM9'
+            self.mainControl['domeControllerSerialPortStr']   ='COM11'
+            self.mainControl['telescopiumLibraryPath']        = 'C:/Users/Adrien/Documents/Library/Telescopium/'
+            self.mainControl['webCamProc']                    = 'LogitechCamera.exe'
+            self.mainControl['webCamApp']                     = 'C:/Program Files (x86)/Common Files/LogiShrd/LogiUCDpp/LogitechCamera.exe'
+            self.mainControl['theSkyProc']                    = 'TheSky64.exe'
+            self.mainControl['theSkyApp']                     = 'C:/Program Files (x86)/Software Bisque/TheSkyX Professional Edition/TheSky64/TheSky64.exe'
 
+        self.theSkyXPaceDelay       = self.mainControl['theSkyXPaceDelay']          # json active while running
 
-        return telescopiumMainControl
+        retInfo = True
+        return retInfo
 
-    def setDebugLevel(self,debugLevl) -> ():
-        writeLog(self.debugLevl,self.currentState,self.deviceKind,'Setting debugLevl to '+str(debugLevl))
-        self.debugLevl = debugLevl
-        return
+    #############################################################################
+    # Method
+    #
+    def setVerboseLevel(self,verboseLevel):
+        writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+        self.verboseLevel = verboseLevel
+        retInfo = True
+        return retInfo
 
-    def setObsLocation(self, latIn, lonIn, heightIn) -> ():
+    #############################################################################
+    # webcam monitor related methods
+    #
+    def startCheese(self):
         try:
-            self.obsLocation = EarthLocation(lat=latIn, lon=lonIn, height=heightIn*u.m)
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('obsLocation = lat:%10s lon:%10s '%(self.obsLocation.lat.to_string(), self.obsLocation.lon.to_string())).strip())
-            if not((str(self.obsLocation.lat)==latIn)and(str(self.obsLocation.lon)==lonIn)):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            getNewInstance=self.mainControl['getNewInstance']
+            appProc=self.mainControl['webCamProc']
+            appPath=self.mainControl['webCamApp']
+            subProc = self._startNew(getNewInstance,appProc,appPath)
+            self.subProcCheese = subProc
+            if not(checkIfProcessRunning(appProc)):
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in setObsLocation"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def loadWorkList(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def stopCheese(self):
         try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'loadWorkList')
-            #self.workList = pd.read_pickle(self.telescopiumLibraryPath+'WorkList/'+'workList.pkl')
-            self.workList = pd.read_excel(self.telescopiumLibraryPath +'workList.ods')
-            if self.workList.shape[0]==0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            appProc=self.mainControl['webCamProc']
+            appPath=self.mainControl['webCamApp']
+            self._stopProc(appProc,appPath)
+            if checkIfProcessRunning(appProc):
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-           ExcMsg="Exception in " + self.deviceKind + " unexpected error in loadWorkList"
-           writeLog(True,"",self.deviceKind,ExcMsg)
-           raise Exception(ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
 
-    def saveWorkList(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def _startNew(self,getNewInstance,procName,cmdStr):
+        if checkIfProcessRunning(procName):
+            if(getNewInstance):
+                theskyXProc = getProcessRunning(procName)
+                theskyXProc.terminate()
+                theskyXProc.wait()
+                time.sleep(10)
+                if checkIfProcessRunning(procName):
+                    writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Could not terminate '+procName)
+                    raise Exception('Could not terminate '+procName)
+                    subProc = 0
+                else:
+                    if platform.system() == "Linux" :
+                        #subProc = subprocess.Popen(cmdStr, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        subProc = subprocess.Popen(cmdStr, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+                    else :
+                        subProc = subprocess.Popen(cmdStr)
+                    time.sleep(10)
+            else:
+                pass
+        else:
+            if platform.system() == "Linux" :
+                #subProc = subprocess.Popen(cmdStr, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                subProc = subprocess.Popen(cmdStr, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+            else :
+                subProc = subprocess.Popen(cmdStr)
+            time.sleep(10)
+        subProc=getProcessRunning(procName)
+        #if not(checkIfProcessRunning(procName)):
+        #    writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Could not start '+procName)
+        #    raise Exception('Could not start '+procName)
+        #    subProc = 0
+        retInfo = subProc
+        return retInfo
+
+    #############################################################################
+    # Method
+    #
+    def _stopProc(self,procName,cmdStr):
+        if checkIfProcessRunning(procName):
+            theskyXProc = getProcessRunning(procName)
+            theskyXProc.terminate()
+            theskyXProc.wait()
+            time.sleep(10)
+            if checkIfProcessRunning(procName):
+                writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Could not terminate '+procName)
+                raise Exception('Could not terminate '+procName)
+        retInfo = True
+        return retInfo
+
+    #############################################################################
+    # theSkyX related methods
+    #
+    def startTheSkyX(self):
         try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'saveWorkList')
-            self.workList.to_excel(self.telescopiumLibraryPath +'workList.ods',index=False)
-            return
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            getNewInstance=self.mainControl['getNewInstance']
+            appProc=self.mainControl['theSkyProc']
+            appPath=self.mainControl['theSkyApp']
+            subProc = self._startNew(getNewInstance,appProc,appPath)
+            self.subProcTheSkyX = subProc
+            if not(checkIfProcessRunning(appProc)):
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)
+            retInfo = True
+            return retInfo
         except:
-           ExcMsg="Exception in " + self.deviceKind + " unexpected error in saveWorkList"
-           writeLog(True,"",self.deviceKind,ExcMsg)
-           raise Exception(ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
 
-    def calculateNight(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def stopTheSkyX(self):
         try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'Calculating upcomming night')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            appProc=self.mainControl['theSkyProc']
+            appPath=self.mainControl['theSkyApp']
+            self._stopProc(appProc,appPath)
+            if checkIfProcessRunning(appProc):
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # weathermonitor related methods
+    #
+    def startWxMonitor(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            self.wxMonitor = WxMonitor()
+            self.wxMonitor.serialPortPaceDelay=self.mainControl['serialPortPaceDelay']
+            self.wxMonitor.verboseLevel=self.mainControl['verboseLevel']
+            self.wxMonitor.debugCommLevel=self.mainControl['debugCommLevel']
+
+            self.wxMonitor.setSerialPortStr(self.mainControl['wxMonitorSerialPortStr'])
+            self.wxMonitor.setTempThreshold(self.mainControl['wxMonitorTempThreshold'])
+            self.wxMonitor.openPort()
+            self.wxMonitor.checkIdent()
+            self.wxMonitorPortOpen = True
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # DC power switch related methods
+    #
+    def startDcPowerSwitch(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            self.dcPowerSwitch = DCPowerSwitch()
+            self.dcPowerSwitch.serialPortPaceDelay=self.mainControl['serialPortPaceDelay']
+            self.dcPowerSwitch.verboseLevel=self.mainControl['verboseLevel']
+            self.dcPowerSwitch.debugCommLevel=self.mainControl['debugCommLevel']
+
+            self.dcPowerSwitch.setSerialPortStr(self.mainControl['dcPowerSwitchSerialPortStr'])
+            self.dcPowerSwitch.openPort()
+            self.dcPowerSwitch.checkIdent()
+            self.dcPowerSwitchPortOpen = True
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def setAllSwOff(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            sleepTime=self.mainControl['sleepForAllOff']
+            self.dcPowerSwitch.setSwOff(0)
+            self.dcPowerSwitch.setSwOff(1)
+            self.dcPowerSwitch.setSwOff(2)
+            self.dcPowerSwitch.setSwOff(3)
+            self.dcPowerSwitch.setSwOff(4)
+            self.dcPowerSwitch.setSwOff(5)
+            self.dcPowerSwitch.setSwOff(6)
+            self.dcPowerSwitch.setSwOff(7)
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Sleep {sleepTime:.1f} seconds for all to settle')
+            time.sleep(sleepTime)
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def setAllSwOn(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            leaveLightOn=self.mainControl['leaveLightOn']
+            sleepTime=self.mainControl['sleepForAllOn']
+            self.dcPowerSwitch.setSwOn(0)
+            self.dcPowerSwitch.setSwOn(1)
+            self.dcPowerSwitch.setSwOn(2)
+            self.dcPowerSwitch.setSwOn(3)
+            self.dcPowerSwitch.setSwOn(4)
+            self.dcPowerSwitch.setSwOn(5)
+            self.dcPowerSwitch.setSwOn(6)
+            self.dcPowerSwitch.setSwOn(7)
+            if leaveLightOn:
+                self.dcPowerSwitch.setSwOn(6)
+            else:
+                self.dcPowerSwitch.setSwOff(6)
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Sleep {sleepTime:.1f} seconds for all to settle')
+            time.sleep(sleepTime)
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # dome related methods
+    #
+    def startDomeController(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            self.domeController = DomeController()
+            self.domeController.serialPortPaceDelay=self.mainControl['serialPortPaceDelay']
+            self.domeController.verboseLevel=self.mainControl['verboseLevel']
+            self.domeController.debugCommLevel=self.mainControl['debugCommLevel']
+
+            self.domeController.setSerialPortStr(self.mainControl['domeControllerSerialPortStr'])
+            self.domeController.openPort()
+            self.domeController.checkIdent()
+            self.domeController.Activate=True
+            self.domeControllerPortOpen = True
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # park detector related methods
+    #
+    def startParkDetector(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            self.parkDetector = ParkDetector()
+            self.parkDetector.serialPortPaceDelay=self.mainControl['serialPortPaceDelay']
+            self.parkDetector.verboseLevel=self.mainControl['verboseLevel']
+            self.parkDetector.debugCommLevel=self.mainControl['debugCommLevel']
+
+            self.parkDetector.setSerialPortStr(self.mainControl['parkDetectorSerialPortStr'])
+            self.parkDetector.openPort()
+            self.parkDetector.checkIdent()
+            self.parkDetectorPortOpen = True
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f"Sleep {self.mainControl['sleepForMount']:.1f} seconds for Mount to power up")
+            self.sleep(self.mainControl['sleepForMount'])
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # mount related methods
+    #
+    def startMount(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            self.telescopeMount = Mount()
+            self.telescopeMount.verboseLevel=self.mainControl['verboseLevel']
+            self.telescopeMount.debugCommLevel=self.mainControl['debugCommLevel']
+            self.telescopeMount.theSkyXPaceDelay=self.mainControl['theSkyXPaceDelay']
+
+            self.telescopeMount.connectDoNotUnpark()
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def setObsLocation(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            latIn=self.mainControl['lat']
+            lonIn=self.mainControl['lon']
+            heightIn=0
+            self.obsLocation = EarthLocation(lat=latIn, lon=lonIn, height=heightIn*u.m)
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('ObsLocation = lat:%10s lon:%10s '%(self.obsLocation.lat.to_string(), self.obsLocation.lon.to_string())).strip())
+            if not((str(self.obsLocation.lat)==latIn)and(str(self.obsLocation.lon)==lonIn)):
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def isSafeToHome(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Checking if safeToHome')
+            timeNowUTC = Time.now()
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'TimeNowUT  ={timeNowUTC}')
+            self.mountHome = AltAz(alt=self.mainControl['homeLocAlt']*u.deg,az=self.mainControl['homeLocAz']*u.deg,obstime=timeNowUTC, location=self.obsLocation)
+            self.mountHome = self.mountHome.transform_to(ICRS())
+            self.mountHome = SkyCoord(self.mountHome.ra.value, self.mountHome.dec.value, frame='icrs', unit='deg')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Mx Home    ={self.mountHome.to_string("hmsdms")}')
+            sun=get_sun(timeNowUTC)
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Sun        ={sun.to_string("hmsdms")}')
+            self.k=sun.separation(self.mountHome).deg
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Seperation ={self.k:.1f}')
+            retInfo = self.k > self.mainControl['minimumSafeToHomeAngle']
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def pointingCorrection(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            frameType       = 'Light'
+            temp            = int(self.mainCamera.getTempSetPoint())
+            objName         = self.workList.loc[self.workItemRowNdx].ObjName+'PointingExp'
+            filterName      = 'OSC'
+            exposure        = 10
+            binning         = 2
+            reductionKind   = 'No'
+            reductionGrp    = ''
+            sequence        = 0
+            autoSaveFile    = False
+            asyncMode       = False
+
+            self.mainCamera.takeImage(frameType,exposure,binning,reductionKind,reductionGrp,autoSaveFile,asyncMode)
+            self.mainCamera.saveImgToFile(self.filePathLights,frameType,temp,objName,filterName,exposure,binning,sequence)
+            returnInfo=self.plateSolve(0.78)
+            if not returnInfo['retCode']:
+                writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Plate solve failed')
+                writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),returnInfo['errorCode'])
+                retInfo = False
+            else:
+                writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Plate solve succeeded')
+                actualRaHrs  = returnInfo['imageCenterRAJ2000']
+                actualDecVal = returnInfo['imageCenterDecJ2000']
+    
+                deltaRaMin   = (actualRaHrs -self.workList.loc[self.workItemRowNdx].skyCoordRaHrsJ2000 )*60*(360/24)*math.cos(returnInfo['imageCenterDecJ2000']*math.pi/180.0)
+                deltaDecMin  = (actualDecVal-self.workList.loc[self.workItemRowNdx].skyCoordDecValJ2000)*60
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'{self.workList.loc[self.workItemRowNdx].skyCoordRaHrsJ2000},{actualRaHrs},{deltaRaMin}')
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'{self.workList.loc[self.workItemRowNdx].skyCoordDecValJ2000},{actualDecVal},{deltaDecMin}')
+    
+                self.telescopeMount.loadPointingDataSet(self.mainControl['telescopiumLibraryPath'],self.mainControl['telescopiumPointingDataSet'])
+                self.telescopeMount.pointingDataSet.loc[len(self.telescopeMount.pointingDataSet)] = {'DateTime':Time.now(), 'deltaRaMin':deltaRaMin, 'deltaDecMin':deltaDecMin}
+                self.telescopeMount.savePointingDataSet(self.mainControl['telescopiumLibraryPath'],self.mainControl['telescopiumPointingDataSet'])
+
+                self.telescopeMount.jogRa(-deltaRaMin)
+                self.telescopeMount.jogDec(-deltaDecMin)
+    
+                sequence        = 1
+                self.mainCamera.takeImage(frameType,exposure,binning,reductionKind,reductionGrp,autoSaveFile,asyncMode)
+                self.mainCamera.saveImgToFile(self.filePathLights,frameType,temp,objName,filterName,exposure,binning,sequence)
+                returnInfo=self.plateSolve(0.78)
+                if not returnInfo['retCode']:
+                    writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Plate solve failed')
+                    writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),returnInfo['errorCode'])
+                    retInfo = False
+                else:
+                    writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Plate solve succeeded')
+                    actualRaHrs  = returnInfo['imageCenterRAJ2000']
+                    actualDecVal = returnInfo['imageCenterDecJ2000']
+                    deltaRaMin   = (actualRaHrs -self.workList.loc[self.workItemRowNdx].skyCoordRaHrsJ2000 )*60*(360/24)*math.cos(returnInfo['imageCenterDecJ2000']*math.pi/180.0)
+                    deltaDecMin  = (actualDecVal-self.workList.loc[self.workItemRowNdx].skyCoordDecValJ2000)*60
+                    writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'{self.workList.loc[self.workItemRowNdx].skyCoordRaHrsJ2000},{actualRaHrs},{deltaRaMin}')
+                    writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'{self.workList.loc[self.workItemRowNdx].skyCoordDecValJ2000},{actualDecVal},{deltaDecMin}')
+                    #############################################################################
+                    # FEATURE ADD:
+                    #   * Measure a good correction
+                    #
+                    retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def dither(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            minDitherArcSec = 4
+            maxDitherArcSec = 10
+            DitherXarcMin = ((random.random() * (maxDitherArcSec - minDitherArcSec +1)) + minDitherArcSec) / 60
+            DitherYarcMin = ((random.random() * (maxDitherArcSec - minDitherArcSec +1)) + minDitherArcSec) / 60
+            if (math.floor(random.random() * 2)) == 0:
+                NorS = 'N'
+            else:
+                NorS = 'S'
+            if (math.floor(random.random() * 2)) == 0:
+                EorW = 'E'
+            else:
+                EorW = 'W'
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'{60*DitherXarcMin:.1f}"{NorS} {60*DitherYarcMin:.1f}"{EorW}')
+            self.telescopeMount.jog(DitherXarcMin, NorS, DitherYarcMin, EorW)
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # focuser related methods
+    #
+    def startFocuser(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            #############################################################################
+            # get an instance and set control values
+            #
+            self.mainFocuser = Focuser()
+            self.mainFocuser.verboseLevel=self.mainControl['verboseLevel']
+            self.mainFocuser.debugCommLevel=self.mainControl['debugCommLevel']
+            self.mainFocuser.theSkyXPaceDelay=self.mainControl['theSkyXPaceDelay']
+
+            self.mainFocuser.numbDwell = self.mainControl['numbDwell']
+            self.mainFocuser.positionMax=self.mainControl['positionMax']
+
+            self.mainFocuser.connect()
+
+            #############################################################################
+            # Load temperature curve and place focuser on it
+            #
+            #############################################################################
+            # FEATURE ADD:
+            #   * needs to cope with an empty cal info set
+            #   * needs to allow for different hw setups
+            #
+            self.mainFocuser.loadFocuserDataSet(self.mainControl['telescopiumLibraryPath'],self.mainControl['telescopiumFocuserDataSet'])
+            self.mainFocuser.setTempCurve()
+            self.mainFocuser.moveToTempCurve()
+
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def findLostFocuser(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            offsetList=200*np.array([1,-1,-2,2,3,-3,-4,4,5,-5,-6,6,7,-7,-8,8,9,-9,-10,10])
+            self.mainFocuser.loadFocuserDataSet(self.mainControl['telescopiumLibraryPath'],self.mainControl['telescopiumFocuserDataSet'])
+            self.mainFocuser.setTempCurve()
+            for offset in offsetList:
+                writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Trying {offset}')
+                self.mainFocuser.moveToTempCurve()
+                self.mainFocuser.move(offset)
+                focusFound = self.mainFocuser.focus2()
+                if focusFound:
+                    break
+            if focusFound:
+                #############################################################################
+                # Found it!
+                self.mainFocuser.mainFocuserDataSet.drop(self.mainFocuser.mainFocuserDataSet.index,inplace=True)
+                self.mainFocuser.mainFocuserDataSet.loc[len(self.mainFocuser.mainFocuserDataSet)] = {'DateTime':Time.now(), 'Temperature':self.mainFocuser.getTemp(),'Step':self.mainFocuser.getPosition()}
+                self.mainFocuser.mainFocuserDataSet.loc[len(self.mainFocuser.mainFocuserDataSet)] = {'DateTime':Time.now(), 'Temperature':self.mainFocuser.getTemp()+0.0001,'Step':self.mainFocuser.getPosition()}
+                self.mainFocuser.saveFocuserDataSet(self.mainControl['telescopiumLibraryPath'],self.mainControl['telescopiumFocuserDataSet'])
+                retInfo = True
+            else:
+                retInfo = False                
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def runFocus(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            #############################################################################
+            # FEATURE ADD:
+            #   * Measure imafe FWHM, reject if > ???
+            #
+            retInfo = True
+            self.mainFocuser.loadFocuserDataSet(self.mainControl['telescopiumLibraryPath'],self.mainControl['telescopiumFocuserDataSet'])
+            self.mainFocuser.setTempCurve()
+            self.mainFocuser.moveToTempCurve()
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Test Focuser')
+            if not self.mainFocuser.focus2():
+                writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Test focus failed, trying to find lost focuser')
+                if not self.findLostFocuser():
+                    writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Failed to find lost focuser')                    
+                    retInfo = False
+                    return retInfo
+                else:
+                    writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Found lost focuser')                           
+                    self.mainFocuser.loadFocuserDataSet(self.mainControl['telescopiumLibraryPath'],self.mainControl['telescopiumFocuserDataSet'])
+                    self.mainFocuser.setTempCurve()
+                
+            self.mainFocuser.meanFocusPosition = 0
+            for sequenceNdx in range(self.mainFocuser.numbDwell):
+                #############################################################################
+                # FEATURE ADD:
+                #   * check weather
+                #   * check user exit
+                #
+
+                self.mainFocuser.moveToTempCurve()
+                if not self.mainFocuser.focus2():
+                    retInfo = False
+                    break
+
+                self.mainFocuser.loadFocuserDataSet(self.mainControl['telescopiumLibraryPath'],self.mainControl['telescopiumFocuserDataSet'])
+                self.mainFocuser.mainFocuserDataSet.loc[len(self.mainFocuser.mainFocuserDataSet)] = {'DateTime':Time.now(), 'Temperature':self.mainFocuser.getTemp(), 'Step':self.mainFocuser.getPosition()}
+                self.mainFocuser.saveFocuserDataSet(self.mainControl['telescopiumLibraryPath'],self.mainControl['telescopiumFocuserDataSet'])
+
+                self.mainFocuser.setTempCurve()
+                self.mainFocuser.meanFocusPosition += self.mainFocuser.getPosition()/self.mainFocuser.numbDwell
+            if retInfo:
+                self.mainFocuser.moveTo(self.mainFocuser.meanFocusPosition)
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # main filter related methods
+    #
+    def startMainFilter(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            self.mainFilter = MainFilter()
+            self.mainFilter.verboseLevel=self.mainControl['verboseLevel']
+            self.mainFilter.debugCommLevel=self.mainControl['debugCommLevel']
+            self.mainFilter.theSkyXPaceDelay=self.mainControl['theSkyXPaceDelay']
+
+            command = ''\
+                    + "var temp=SelectedHardware.filterWheelModel;" \
+                    + "var Out;" \
+                    + "Out=temp;"
+            skyXresult = skyXcmd(self.mainFilter,command,True)
+            skyXparts = skyXresult.split("|")
+            if 'No Filter Wheel Selected' in skyXparts[0]:
+                self.mainFilter.kind = 'OSC'
+            else:
+                self.mainFilter.kind = 'Filtered'
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'MainFilter is {self.mainFilter.kind}')
+
+            self.mainFilter.connect()
+            self.mainFilter.getNumbFilters()
+            self.mainFilter.getFilterNames()
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # main camera related methods
+    #
+    def startMainCamera(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            self.mainCamera = MainCamera()
+            self.mainCamera.verboseLevel=self.mainControl['verboseLevel']
+            self.mainCamera.debugCommLevel=self.mainControl['debugCommLevel']
+            self.mainCamera.theSkyXPaceDelay=self.mainControl['theSkyXPaceDelay']
+
+            self.mainCamera.connect()
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def setCameraTempTarget(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            deltaTemp=self.mainControl['deltaTemp']
+            a_list=self.mainControl['a_list']
+            b_list=self.mainControl['b_list']
+            self.tempSetPointForTonight=([item for item in a_list if item >= (self.wxMonitor.getAmbTemp()-deltaTemp)])
+            self.tempSetPointForTonight=b_list[len(self.tempSetPointForTonight)]
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('Amb %5.1f, MinSetPoint %5.1f, Selected SetPt %5.1f '%(self.wxMonitor.getAmbTemp(),self.wxMonitor.getAmbTemp()-deltaTemp,self.tempSetPointForTonight)).strip())
+            if (self.tempSetPointForTonight<-20) or (self.tempSetPointForTonight>0):
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def plateSolve(self,imageScale):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            if os.path.exists(self.mainCamera.lastSaveFilePath+'/'+self.mainCamera.lastFileName.split('.')[0]+'.SRC'):
+                writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Remove old SRC file')
+                os.remove(self.mainCamera.lastSaveFilePath+'/'+self.mainCamera.lastFileName.split('.')[0]+'.SRC')
+    
+            #############################################################################
+            # FEATURE ADD:
+            #   * solve hardcoced imagescale
+            #   * should use insertWCS?
+            #
+            
+            self.imageScale=imageScale
+            command = ''\
+                    + f"ImageLink.pathToFITS = '{self.mainCamera.lastSaveFilePath}/{self.mainCamera.lastFileName}';" \
+                    + f"ImageLink.scale = {self.imageScale};" \
+                    + "ImageLink.unknownScale = 1;" \
+                    + "ImageLink.execute();" \
+                    + "Out = ImageLinkResults.errorCode;" \
+                    + "Out += '|' + ImageLinkResults.succeeded;" \
+                    + "Out += '|' + ImageLinkResults.searchAborted;" \
+                    + "Out += '|' + ImageLinkResults.errorText;" \
+                    + "Out += '|' + ImageLinkResults.imageScale;" \
+                    + "Out += '|' + ImageLinkResults.imagePositionAngle;" \
+                    + "Out += '|' + ImageLinkResults.imageCenterRAJ2000;" \
+                    + "Out += '|' + ImageLinkResults.imageCenterDecJ2000;" \
+                    + "Out += '|' + ImageLinkResults.imageFWHMInArcSeconds;" 
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(),skyXresult)
+            skyXparts = skyXresult.split("|")
+            if len(skyXparts) == 2:
+                retInfo = {}
+                retInfo['retCode'] = False                
+                retInfo['errorCode'] = (skyXparts[0])                
+                retInfo['succeeded'] = (skyXparts[1])
+            elif len(skyXparts) == 10:
+                retInfo = {}
+                retInfo['retCode'] = True                
+                retInfo['errorCode'] = (skyXparts[0])
+                retInfo['succeeded'] = (skyXparts[1])
+                retInfo['searchAborted'] = (skyXparts[2])
+                retInfo['errorText'] = (skyXparts[3])
+                retInfo['imageScale'] = float(skyXparts[4])
+                retInfo['imagePositionAngle'] = float(skyXparts[5])
+                retInfo['imageCenterRAJ2000'] = float(skyXparts[6])
+                retInfo['imageCenterDecJ2000'] = float(skyXparts[7])
+                retInfo['imageFWHMInArcSeconds'] = float(skyXparts[8])
+            else:
+                x=1/0
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def plateSolve2(self,imageScale):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            if os.path.exists(self.mainCamera.lastSaveFilePath+'/'+self.mainCamera.lastFileName.split('.')[0]+'.SRC'):
+                writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Remove old SRC file')
+                os.remove(self.mainCamera.lastSaveFilePath+'/'+self.mainCamera.lastFileName.split('.')[0]+'.SRC')
+
+            self.imageScale=imageScale
+            command = ''\
+                    + "img = ccdsoftCameraImage;" \
+                    + f'img.Path = "{self.mainCamera.lastSaveFilePath}/{self.mainCamera.lastFileName}";' \
+                    + 'img.Open();' \
+                    + f'img.ScaleInArcsecondsPerPixel={self.imageScale};' \
+                    + 'img.InsertWCS(true);' \
+                    + 'img.Save();' \
+                    + 'img.Close();' \
+                    + "var Out=12;" 
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(),skyXresult)
+            skyXparts = skyXresult.split("|")
+            if skyXparts[0] == '0':
+                retInfo = {}
+                retInfo['retCode'] = True                
+                retInfo['errorCode'] = (skyXparts[0])                
+                retInfo['succeeded'] = (skyXparts[1])
+            else:
+                x=1/0
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # guider related methods
+    #
+    def startGuider(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            self.guider = Guider()
+            self.guider.verboseLevel=self.mainControl['verboseLevel']
+            self.guider.debugCommLevel=self.mainControl['debugCommLevel']
+            self.guider.theSkyXPaceDelay=self.mainControl['theSkyXPaceDelay']
+
+            self.guider.connect()
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # handle the lost observatory
+    #
+    def solveUnkState(self):
+        writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+        retInfo = True
+        domeController_isClosed = self.domeController.isClosed()
+        domeController_isOpen = self.domeController.isOpen()
+        parkDetector_isParked = self.parkDetector.isParked()
+        while(not(domeController_isClosed and parkDetector_isParked)):
+            if(domeController_isOpen and parkDetector_isParked):
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),'Was Open and Parked')
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),'-> Closing Roof')
+                self.domeController.closeRoof()
+            if(domeController_isOpen and not parkDetector_isParked):
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),'Was Open and Not Parked')
+                if self.isSafeToHome():
+                    writeLog(True,self.currentState,self.deviceKind,currentFuncName(),'-> Connect Mount')
+                    self.startMount()
+                    writeLog(True,self.currentState,self.deviceKind,currentFuncName(),'-> Homeing Mount')
+                    self.telescopeMount.home(False)
+                    writeLog(True,self.currentState,self.deviceKind,currentFuncName(),'-> Parking Mount')
+                    self.telescopeMount.park()
+                else:
+                    writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ptos('Is not safe to home mount, waiting for sun seperation %6.3f > %2.0f '%(self.k,self.mainControl['minimumSafeToHomeAngle'])).strip())
+                    writeLog(True,self.currentState,self.deviceKind,currentFuncName(),'Wait 1 minute')
+                    time.sleep(60)
+            if(domeController_isClosed and not parkDetector_isParked):
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),'Was Closed and Not Parked')
+                if self.wxMonitor.isClear():
+                    writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ptos('Wx is safe, Amb%6.2f Sky%6.2f Diff%6.2f'%(self.wxMonitor.ambTemp,self.wxMonitor.skyTemp,self.wxMonitor.deltaTemp)).strip())
+                    self.parkDetector.FrcPPOn()
+                    writeLog(True,self.currentState,self.deviceKind,currentFuncName(),'-> Opening Roof')
+                    self.domeController.openRoof()
+                    writeLog(True,self.currentState,self.deviceKind,currentFuncName(),'-> Delay 10seconds for Mount to power up')
+                    time.sleep(10)
+                    self.parkDetector.FrcPPOff()
+                else:
+                    writeLog(True,self.currentState,self.deviceKind,currentFuncName(),"Was Closed and Not Parked and Wx is bad")
+                    retInfo = False
+                    break
+            domeController_isClosed = self.domeController.isClosed()
+            domeController_isOpen = self.domeController.isOpen()
+            parkDetector_isParked = self.parkDetector.isParked()
+        if retInfo:
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),'Was Closed and Parked!!')
+        return retInfo
+
+    #############################################################################
+    # flats related methods
+    #
+    def loadFlatExpBlkList(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            self.flatExpBlk = pd.read_pickle(self.mainControl['telescopiumLibraryPath']+'/flatExpBlk.pkl')
+            retInfo = True
+            return retInfo
+
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def calculateFlatSkyLoc(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+
+            timeNowUTC = Time.now()
+            frames = AltAz(obstime=timeNowUTC, location=self.obsLocation)
+            sun  = get_sun (timeNowUTC)
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('Sun  (RaDec)=',sun.to_string('hmsdms')).strip())
+
+            sunAzAlt  = get_sun (timeNowUTC).transform_to(frames)
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('Sun  (AzAlt)=',sunAzAlt.to_string('hmsdms')).strip())
+
+            self.flatSpot = AltAz(alt=self.mainControl['flatSpotAltitude']*u.deg,az=(sunAzAlt.az.value+180)*u.deg,obstime=timeNowUTC, location=self.obsLocation)
+            self.flatSpot = self.flatSpot.transform_to(ICRS())
+            self.flatSpot = SkyCoord(self.flatSpot.ra.value, self.flatSpot.dec.value, frame='icrs', unit='deg')
+
+            flatSpotAzAlt  = self.flatSpot.transform_to(frames)
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('Flat (AzAlt)=',flatSpotAzAlt.to_string('hmsdms')).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('Flat (RaDec)=',self.flatSpot.to_string('hmsdms')).strip())
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def slewToFlat(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            self.telescopeMount.slewToRaDec(self.flatSpot.ra.hour, self.flatSpot.dec.value, False)
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # night related methods
+    #
+    def setPathsForTonight(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            dateStringForTonight = datetime.datetime.now().strftime("%Y%m%d")
+            self.filePathBias    = self.mainControl['telescopiumLibraryPath'] + 'Bias/'      + dateStringForTonight
+            self.filePathFlats   = self.mainControl['telescopiumLibraryPath'] + 'Flats/'     + dateStringForTonight
+            self.filePathDarks   = self.mainControl['telescopiumLibraryPath'] + 'Darks/'     + dateStringForTonight
+            self.filePathLights  = self.mainControl['telescopiumLibraryPath'] + 'Lights/'    + dateStringForTonight
+
+            self.filePathBias    = self.mainControl['telescopiumLibraryPath'] + dateStringForTonight
+            self.filePathFlats   = self.mainControl['telescopiumLibraryPath'] + dateStringForTonight
+            self.filePathDarks   = self.mainControl['telescopiumLibraryPath'] + dateStringForTonight
+            self.filePathLights  = self.mainControl['telescopiumLibraryPath'] + dateStringForTonight
+            global filePathLog
+            filePathLog          = self.mainControl['telescopiumLibraryPath'] + dateStringForTonight
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def calculateNight(self):
+        try:
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            
+            now = Time(datetime.datetime((datetime.datetime.now()+datetime.timedelta(days=1)).year, (datetime.datetime.now()+datetime.timedelta(days=1)).month, (datetime.datetime.now()+datetime.timedelta(days=1)).day, (datetime.datetime.now()+datetime.timedelta(days=1)).hour, (datetime.datetime.now()+datetime.timedelta(days=1)).minute, (datetime.datetime.now()+datetime.timedelta(days=1)).second))            
+            self.hourOffset=int((24*(Time.now()-now).value)%24)
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Time offset is {self.hourOffset:.1f}hours')
+            
             delta_midnight = np.linspace(-12, 12, 1000)*u.hour
             midnightLocal = Time(datetime.datetime((datetime.datetime.now()+datetime.timedelta(days=1)).year, (datetime.datetime.now()+datetime.timedelta(days=1)).month, (datetime.datetime.now()+datetime.timedelta(days=1)).day, 0, 0, 0))
-            utcoffset = -4*u.hour  # Eastern Daylight Time
+            utcoffset = -self.hourOffset*u.hour  # Eastern Daylight Time
             midnight = midnightLocal - utcoffset
             times = midnight + delta_midnight
             frames = AltAz(obstime=times, location=self.obsLocation)
 
             sunaltazs  = get_sun (times).transform_to(frames)
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'get sun complete')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Get sun complete')
             #moonaltazs = get_moon(times).transform_to(frames)
 
             self.sunSet       = midnight+delta_midnight[sunaltazs.alt.value<0][0]
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('sun set                     ',self.sunSet).strip())
-
             self.sunSetFlats  = midnight+delta_midnight[sunaltazs.alt.value<1][0]
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('sun set  Flats              ',self.sunSetFlats).strip())
-
-            self.sunSetAstro  = midnight+delta_midnight[sunaltazs.alt.value<self.sunDownDegrees][0]
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('sun set  astro              ',self.sunSetAstro).strip())
-
-            self.sunRiseAstro = midnight+delta_midnight[sunaltazs.alt.value<self.sunDownDegrees][-1]
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('sun rise astro              ',self.sunRiseAstro).strip())
-
+            self.sunSetAstro  = midnight+delta_midnight[sunaltazs.alt.value<self.mainControl['sunDownDegrees']][0]
+            self.sunRiseAstro = midnight+delta_midnight[sunaltazs.alt.value<self.mainControl['sunDownDegrees']][-1]
             self.sunRise      = midnight+delta_midnight[sunaltazs.alt.value<0][-1]
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('sun rise                    ',self.sunRise).strip())
 
-            if self.normalScheduling:
+            if self.mainControl['normalScheduling']:
                 self.timetoEnter_PoweredUp          = self.sunSetFlats - 2*u.h
                 self.timetoEnter_AllConnected       = self.sunSetFlats - 1*u.h
                 self.timetoEnter_ReadyToOpen        = self.sunSetFlats - 0.5*u.h
                 self.timetoEnter_ReadyToFlats       = self.sunSetFlats
-
                 self.timetoEnter_ReadyToObserve     = self.sunSetAstro
                 self.timetoLeave_ReadyToObserve     = self.sunRiseAstro
                 self.timetoLeave_AllConnected       = self.sunRise
                 self.timetoLeave_PoweredUp          = self.sunRise +1*u.h
-
             else:
                 self.timetoEnter_PoweredUp          = Time.now()
                 self.timetoEnter_AllConnected       = Time.now()
                 self.timetoEnter_ReadyToOpen        = Time.now()
                 self.timetoEnter_ReadyToFlats       = Time.now()
                 self.timetoEnter_ReadyToObserve     = Time.now()
-
                 self.timetoLeave_ReadyToObserve     = self.sunRiseAstro
                 self.timetoLeave_AllConnected       = self.sunRise
                 self.timetoLeave_PoweredUp          = self.sunRise +1*u.h
 
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('timetoEnter_PoweredUp       ',self.timetoEnter_PoweredUp).strip())
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('timetoEnter_AllConnected    ',self.timetoEnter_AllConnected).strip())
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('timetoEnter_ReadyToOpen     ',self.timetoEnter_ReadyToOpen).strip())
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('timetoEnter_ReadyToFlats    ',self.timetoEnter_ReadyToFlats).strip())
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('timetoEnter_ReadyToObserve  ',self.timetoEnter_ReadyToObserve).strip())
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('timetoLeave_ReadyToObserve  ',self.timetoLeave_ReadyToObserve).strip())
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('timetoLeave_AllConnected    ',self.timetoLeave_AllConnected).strip())
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('timetoLeave_PoweredUp       ',self.timetoLeave_PoweredUp).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('Sun set                     ',self.sunSet).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('Sun set  Flats              ',self.sunSetFlats).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('Sun set  astro              ',self.sunSetAstro).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('Sun rise astro              ',self.sunRiseAstro).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('Sun rise                    ',self.sunRise).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('TimetoEnter_PoweredUp       ',self.timetoEnter_PoweredUp).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('TimetoEnter_AllConnected    ',self.timetoEnter_AllConnected).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('TimetoEnter_ReadyToOpen     ',self.timetoEnter_ReadyToOpen).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('TimetoEnter_ReadyToFlats    ',self.timetoEnter_ReadyToFlats).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('TimetoEnter_ReadyToObserve  ',self.timetoEnter_ReadyToObserve).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('TimetoLeave_ReadyToObserve  ',self.timetoLeave_ReadyToObserve).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('TimetoLeave_AllConnected    ',self.timetoLeave_AllConnected).strip())
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),ptos('TimetoLeave_PoweredUp       ',self.timetoLeave_PoweredUp).strip())
             if ((self.timetoLeave_PoweredUp-self.timetoEnter_PoweredUp).value)>1:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in calculateNight"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
+    #############################################################################
+    # Method
+    #
     def calculateNight2(self):
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'calculate items over night Night')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+
+            now = Time(datetime.datetime((datetime.datetime.now()+datetime.timedelta(days=1)).year, (datetime.datetime.now()+datetime.timedelta(days=1)).month, (datetime.datetime.now()+datetime.timedelta(days=1)).day, (datetime.datetime.now()+datetime.timedelta(days=1)).hour, (datetime.datetime.now()+datetime.timedelta(days=1)).minute, (datetime.datetime.now()+datetime.timedelta(days=1)).second))            
+            self.hourOffset=int((24*(Time.now()-now).value)%24)
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Time offset is {self.hourOffset:.1f}hours')
+
+
             self.midnightLocal = Time(datetime.datetime((datetime.datetime.now()+datetime.timedelta(days=1)).year, (datetime.datetime.now()+datetime.timedelta(days=1)).month, (datetime.datetime.now()+datetime.timedelta(days=1)).day, 0, 0, 0))
-            self.utcoffset = -4*u.hour  # Eastern Daylight Time
+            self.utcoffset = -self.hourOffset*u.hour  # Eastern Daylight Time
             self.midnight = self.midnightLocal - self.utcoffset
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'calculate frames over night')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Calculate frames over night')
             self.delta_midnight = np.linspace(-12, 12, 1+(24)*4)*u.hour
             self.times = self.midnight + self.delta_midnight
             self.frames = AltAz(obstime=self.times, location=self.obsLocation)
 
 
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'calculate sun location over night')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Calculate sun location over night')
             self.sunaltazs = get_sun(self.times).transform_to(self.frames)
 
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'calculate moon location over night')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Calculate moon location over night')
             self.moonaltazs= get_moon(self.times).transform_to(self.frames)
 
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'calculate sun/moon/joint down times over night')
-            self.sunIsDown  = self.sunaltazs.alt.value<self.sunDownDegrees
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,f'sun is down (below {self.sunDownDegrees}) for {self.sunIsDown.sum()*0.25} hours')
-            self.moonIsDown = self.moonaltazs.alt.value<self.moonDownDegrees
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,f'moon is down (below {self.moonDownDegrees}) for {self.moonIsDown.sum()*0.25} hours')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Calculate sun/moon/joint down times over night')
+            self.sunIsDown  = self.sunaltazs.alt.value<self.mainControl['sunDownDegrees']
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Sun is down (below {self.mainControl["sunDownDegrees"]:.1f}) for {self.sunIsDown.sum()*0.25:.1f} hours')
+            self.moonIsDown = self.moonaltazs.alt.value<self.mainControl['moonDownDegrees']
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Moon is down (below {self.mainControl["moonDownDegrees"]:.1f}) for {self.moonIsDown.sum()*0.25:.1f} hours')
             self.sunAndMoonAreDown = self.sunIsDown * self.moonIsDown
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,f'both are down for {self.sunAndMoonAreDown.sum()*0.25} hours')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Both are down for {self.sunAndMoonAreDown.sum()*0.25:.1f} hours')
 
             self.timesItIsDark = self.times[self.sunAndMoonAreDown]
 
@@ -304,26 +1405,26 @@ class Observatory:
             if makePlots:
                 plt.plot(self.delta_midnight, self.sunaltazs.alt, color='r', label='Sun')
                 plt.plot(self.delta_midnight, self.moonaltazs.alt, color=[0.75]*3, ls='--', label='Moon')
-                plt.fill_between(self.delta_midnight, self.sunDownDegrees*u.deg, 90*u.deg, self.sunaltazs.alt < self.sunDownDegrees*u.deg, color='0.5', zorder=0)
-                plt.fill_between(self.delta_midnight, self.sunDownDegrees*u.deg, 90*u.deg, self.sunaltazs.alt < self.sunDownDegrees*u.deg, color='k', zorder=0)
+                plt.fill_between(self.delta_midnight, self.mainControl['sunDownDegrees']*u.deg, 90*u.deg, self.sunaltazs.alt < self.mainControl['sunDownDegrees']*u.deg, color='0.5', zorder=0)
+                plt.fill_between(self.delta_midnight, self.mainControl['sunDownDegrees']*u.deg, 90*u.deg, self.sunaltazs.alt < self.mainControl['sunDownDegrees']*u.deg, color='k', zorder=0)
                 plt.xlim(-12*u.hour, 12*u.hour)
                 plt.xticks((np.arange(13)*2-12)*u.hour)
-                plt.ylim(self.sunDownDegrees*u.deg, 90*u.deg)
+                plt.ylim(self.mainControl['sunDownDegrees']*u.deg, 90*u.deg)
                 plt.xlabel('Hours from EDT Midnight')
                 plt.ylabel('Altitude [deg]')
                 plt.show()
 
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'calculate all workListItems location over night')
-            
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Calculate all workListItems location over night')
+
             self.workListSkyCoords = SkyCoord(self.workList.skyCoordRaHrsJ2000[:]*u.hour, self.workList.skyCoordDecValJ2000[:]*u.deg, frame='icrs')
             self.workListAltaz = self.workListSkyCoords[:, np.newaxis].transform_to(self.frames[np.newaxis])
-            
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,f'Numb Objects                    {self.workListAltaz.shape[0]}')
+
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Numb Objects                    {self.workListAltaz.shape[0]:.1f}')
 
             if makePlots:
                 plt.plot(self.delta_midnight, self.workListAltaz[:].alt.degree.T, marker='', alpha=0.5)
-                plt.fill_between(self.delta_midnight, self.sunDownDegrees*u.deg, 90*u.deg, self.sunaltazs.alt < self.sunDownDegrees*u.deg, color='0.5', zorder=0)
-                plt.fill_between(self.delta_midnight, self.sunDownDegrees*u.deg, 90*u.deg, self.sunaltazs.alt < self.sunDownDegrees*u.deg, color='k', zorder=0)
+                plt.fill_between(self.delta_midnight, self.mainControl['sunDownDegrees']*u.deg, 90*u.deg, self.sunaltazs.alt < self.mainControl['sunDownDegrees']*u.deg, color='0.5', zorder=0)
+                plt.fill_between(self.delta_midnight, self.mainControl['sunDownDegrees']*u.deg, 90*u.deg, self.sunaltazs.alt < self.mainControl['sunDownDegrees']*u.deg, color='k', zorder=0)
                 plt.xlim(-12*u.hour, 12*u.hour)
                 plt.xticks((np.arange(13)*2-12)*u.hour)
                 plt.ylim(0, 90*u.deg)
@@ -332,8 +1433,8 @@ class Observatory:
                 plt.show()
 
                 plt.plot(self.delta_midnight[self.sunAndMoonAreDown], self.workListAltaz[:,self.sunAndMoonAreDown].alt.degree.T, marker='', alpha=0.5)
-                plt.fill_between(self.delta_midnight, self.sunDownDegrees*u.deg, 90*u.deg, self.sunaltazs.alt < self.sunDownDegrees*u.deg, color='0.5', zorder=0)
-                plt.fill_between(self.delta_midnight, self.sunDownDegrees*u.deg, 90*u.deg, self.sunaltazs.alt < self.sunDownDegrees*u.deg, color='k', zorder=0)
+                plt.fill_between(self.delta_midnight, self.mainControl['sunDownDegrees']*u.deg, 90*u.deg, self.sunaltazs.alt < self.mainControl['sunDownDegrees']*u.deg, color='0.5', zorder=0)
+                plt.fill_between(self.delta_midnight, self.mainControl['sunDownDegrees']*u.deg, 90*u.deg, self.sunaltazs.alt < self.mainControl['sunDownDegrees']*u.deg, color='k', zorder=0)
                 plt.xlim(-12*u.hour, 12*u.hour)
                 plt.xticks((np.arange(13)*2-12)*u.hour)
                 plt.ylim(0*u.deg, 90*u.deg)
@@ -341,16 +1442,16 @@ class Observatory:
                 plt.ylabel('Altitude [deg]')
                 plt.show()
 
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'Calculate times each object is observable')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Calculate times each object is observable')
 
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,f'useable horizon is {self.usableHorizon}')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f"Useable horizon is {self.mainControl['usableHorizon']:.1f}")
 
             # Calculate while the sun is down what frames for each object that are above the useable horizon
-            self.pointersToAboveHorizon=self.workListAltaz[:,self.sunAndMoonAreDown].alt.degree>self.usableHorizon
+            self.pointersToAboveHorizon=self.workListAltaz[:,self.sunAndMoonAreDown].alt.degree>self.mainControl['usableHorizon']
 
             # the usable time is the net sum of time each object is above the horizon
             self.durationAboveHorizon_hrs=(self.pointersToAboveHorizon).sum(axis=1)*0.25
-            
+
 
             # minimum time is met if time above the horizon exceeds the needed time
             self.pointersToitemsWithEnoughTime = self.durationAboveHorizon_hrs>(self.workList['NetTimeMin']/60)
@@ -358,7 +1459,7 @@ class Observatory:
 
             self.workListWithEnoughTimeAltaz=self.workListAltaz[self.pointersToitemsWithEnoughTime]
 
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,f'Numb Objects with ehough time   {self.workListWithEnoughTimeAltaz.shape[0]}')
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'Numb Objects with ehough time   {self.workListWithEnoughTimeAltaz.shape[0]:.1f}')
 
             self.dunno=self.pointersToAboveHorizon[self.pointersToitemsWithEnoughTime,:]
             self.dunno.shape
@@ -392,8 +1493,8 @@ class Observatory:
 
             if makePlots+True:
                 plt.plot(self.delta_midnight[self.sunAndMoonAreDown], self.workListWithEnoughTimeAltaz[:,self.sunAndMoonAreDown].alt.degree.T, marker='', alpha=0.5)
-                plt.fill_between(self.delta_midnight, self.sunDownDegrees*u.deg, 90*u.deg, self.sunaltazs.alt < self.sunDownDegrees*u.deg, color='0.5', zorder=0)
-                plt.fill_between(self.delta_midnight, self.sunDownDegrees*u.deg, 90*u.deg, self.sunaltazs.alt < self.sunDownDegrees*u.deg, color='k', zorder=0)
+                plt.fill_between(self.delta_midnight, self.mainControl['sunDownDegrees']*u.deg, 90*u.deg, self.sunaltazs.alt < self.mainControl['sunDownDegrees']*u.deg, color='0.5', zorder=0)
+                plt.fill_between(self.delta_midnight, self.mainControl['sunDownDegrees']*u.deg, 90*u.deg, self.sunaltazs.alt < self.mainControl['sunDownDegrees']*u.deg, color='k', zorder=0)
                 plt.xlim(-12*u.hour, 12*u.hour)
                 plt.xticks((np.arange(13)*2-12)*u.hour)
                 plt.ylim(0*u.deg, 90*u.deg)
@@ -401,723 +1502,180 @@ class Observatory:
                 plt.ylabel('Altitude [deg]')
                 plt.show()
 
-    def chooseWorkItem(self,mode) -> (bool):
+    #############################################################################
+    # Workload related methods
+    #
+    def loadWorkList(self):
         try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'chooseWorkItem')
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'measure what where now')
-            aa = AltAz(location=self.obsLocation, obstime=Time.now())
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'1')
-
-            #for index, row in self.workList.iterrows():
-            #    skyCoordJ2000 = SkyCoord.from_name(row.objName)
-            #    skyCoordJNow  = skyCoordJ2000.transform_to(FK5(equinox='J2023'))
-
-            #    self.workList.loc[index,'skyCoordRaHrsJ2000'] = skyCoordJ2000.ra.hour
-            #    self.workList.loc[index,'skyCoordDecValJ2000'] = skyCoordJ2000.dec.value
-            #    self.workList.loc[index,'skyCoordRaHrsJNow'] = skyCoordJNow.ra.hour
-            #    self.workList.loc[index,'skyCoordDecValJNow'] = skyCoordJNow.dec.value
-
-            #    workItemSkyCoord = SkyCoord(self.workList.loc[index,'skyCoordRaHrsJNow']*u.hour, self.workList.loc[index,'skyCoordDecValJNow']*u.deg, frame='icrs')
-
-            #    self.workList.loc[index,'altNow'] = workItemSkyCoord.transform_to(aa).alt.value
-            #    self.workList.loc[index,'azNow'] = workItemSkyCoord.transform_to(aa).az.value
-
-            #writeLog(self.debugLevl,self.currentState,self.deviceKind,'2')
-            #self.workList['testHorizon'] = self.workList['altNow']>self.workList['Horizon']
-            #self.workList = self.workList.replace(True,'Above')
-            #self.workList = self.workList.replace(False,'Below')
-            #self.workList['NetTimeMin'] = 10+self.workList['Exp']*self.workList['Rep']/60
-
-
-
-            return
-
-            timeNowUTC                  = Time.now()
-
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,f'{self.workList.shape[0]} items to look over')
-
-            self.workList = self.workList.sort_values('alt',ascending=False)
-            print(self.workList)
-            asd=self.workList.loc[(self.workList.alt>self.usableHorizon) & (self.workList.done==0)]
-            if asd.shape[0]>0:
-                rowNdx = asd.index[0]
-                self.workItemRowNdx = rowNdx
-                writeLog(self.debugLevl,self.currentState,self.deviceKind,f'Found {self.workList.objName[self.workItemRowNdx]} {self.workList.CommonName[self.workItemRowNdx]} in work list at {int(self.workList.alt[self.workItemRowNdx])}deg')
-                return True
-            else:
-                self.workItemRowNdx = float("nan")
-                writeLog(self.debugLevl,self.currentState,self.deviceKind,'No work found in work list')
-                return False
-        except:
-           ExcMsg="Exception in " + self.deviceKind + " unexpected error in chooseWorkItem"
-           writeLog(True,"",self.deviceKind,ExcMsg)
-           raise Exception(ExcMsg)
-
-
-    def startCheese(self,getNewInstance,appProc,appPath) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'Start Webcam Monitor')
-            subProc = self._startNew(getNewInstance,appProc,appPath)
-            self.subProcCheese = subProc
-            if not(checkIfProcessRunning(appProc)):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            #self.workList = pd.read_pickle(self.mainControl['telescopiumLibraryPath']+'WorkList/'+'workList.pkl')
+            self.workList = pd.read_excel(self.mainControl['telescopiumLibraryPath'] + self.mainControl['telescopiumWorkList'])
+            if self.workList.shape[0]==0:
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in startCheese"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def stopCheese(self,appProc,appPath) -> ():
+    #############################################################################
+    # Method
+    #
+    def chooseWorkItem(self):
+        #############################################################################
+        # FEATURE ADD:
+        #   * Add moon down condition
+        #   * Add west of Mederian
+        #
         try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'Stopping Webcam Monitor')
-            self._stopProc(appProc,appPath)
-            if checkIfProcessRunning(appProc):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
-                raise Exception(ExcMsg)
-            return
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            match self.mainControl['workLoadSearchMethon']:
+                case 'maxAlt':
+                    writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f'{self.workList.shape[0]:.1f} items to look over')
+
+                    #############################################################################
+                    # make all data current
+                    #
+                    writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Measure what where now')
+                    aa = AltAz(location=self.obsLocation, obstime=Time.now())
+                    for index, row in self.workList.iterrows():
+                        skyCoordJ2000 = SkyCoord.from_name(row.ObjName)
+                        skyCoordJNow  = skyCoordJ2000.transform_to(FK5(equinox='J2023'))
+
+                        self.workList.loc[index,'skyCoordRaHrsJ2000'] = skyCoordJ2000.ra.hour
+                        self.workList.loc[index,'skyCoordDecValJ2000'] = skyCoordJ2000.dec.value
+                        self.workList.loc[index,'skyCoordRaHrsJNow'] = skyCoordJNow.ra.hour
+                        self.workList.loc[index,'skyCoordDecValJNow'] = skyCoordJNow.dec.value
+
+                        workItemSkyCoord = SkyCoord(self.workList.loc[index,'skyCoordRaHrsJNow']*u.hour, self.workList.loc[index,'skyCoordDecValJNow']*u.deg, frame='icrs')
+
+                        self.workList.loc[index,'altNow'] = workItemSkyCoord.transform_to(aa).alt.value
+                        self.workList.loc[index,'azNow'] = workItemSkyCoord.transform_to(aa).az.value
+
+                    #############################################################################
+                    # test Horizon,...
+                    #
+                    self.workList['altMet'] = self.workList['altNow']>self.workList['AltMin']
+                    self.workList = self.workList.replace(True,'met')
+                    self.workList = self.workList.replace(False,'not met')
+
+                    #############################################################################
+                    # evaluate strict conditions, Not Done, above min Alt, Filter/OSC match
+                    #
+                    self.workList['strictConditionsMet'] = (self.workList['done']=='not done') & (self.workList['altMet']=='met') & (self.workList['Kind']==self.mainFilter.kind)
+                    self.workList = self.workList.replace(True,'met')
+                    self.workList = self.workList.replace(False,'not met')
+
+                    #############################################################################
+                    # Sort by Priority, alt
+                    #
+                    foo=self.workList.sort_values(by=['strictConditionsMet','Pri','altNow'],ascending=[True,False,False])
+                    self.workList=foo
+                    #print(self.workList.T)
+                    if self.workList.iloc[0]['strictConditionsMet']  == 'met':
+                        self.workItemRowNdx = self.workList.index[0]
+                        writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),f"Found {self.workList.loc[self.workItemRowNdx]['ObjName']} {self.workList.loc[self.workItemRowNdx]['CommonName']}, Pri {self.workList.loc[self.workItemRowNdx]['Pri']:.1f} in work list at {self.workList.loc[self.workItemRowNdx]['altNow']:.1f}deg")
+                        return True
+                    else:
+                        self.workItemRowNdx = float("nan")
+                        writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'No work found in work list')
+                        return False
+                case _:
+                    ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                    writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+                    raise Exception(ExcMsg)
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in startCheese"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def startTheSkyX(self,getNewInstance,appProc,appPath) -> ():
+    #############################################################################
+    # Method
+    #
+    def saveWorkList(self):
         try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'Start TheSkyX')
-            subProc = self._startNew(getNewInstance,appProc,appPath)
-            self.subProcTheSkyX = subProc
-            if not(checkIfProcessRunning(appProc)):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
-                raise Exception(ExcMsg)
-            return
+            writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
+            self.workList.to_excel(self.mainControl['telescopiumLibraryPath'] + self.mainControl['telescopiumWorkList'],index=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in startTheSkyX"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,self.currentState,self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def stopTheSkyX(self,appProc,appPath) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'Stopping TheSkyX')
-            self._stopProc(appProc,appPath)
-            if checkIfProcessRunning(appProc):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
-                raise Exception(ExcMsg)
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in startTheSkyX"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def loadFlatExpBlkList(self) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'loadFlatExpBlkList')
-            self.flatExpBlk = pd.read_pickle(self.telescopiumLibraryPath+'/flatExpBlk.pkl')
-            return
-        except:
-           ExcMsg="Exception in " + self.deviceKind + " unexpected error in loadFlatExpBlkList"
-           writeLog(True,"",self.deviceKind,ExcMsg)
-           raise Exception(ExcMsg)
-
-    def startWxMonitor(self,telescopiumMainControl) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'connectWxMonitor')
-            self.wxMonitor = WxMonitor()
-            self.wxMonitor.setSerialPortStr(telescopiumMainControl['wxMonitorSerialPortStr'])
-            self.wxMonitor.setPaceDelay(telescopiumMainControl['serialPortPaceDelay'])
-            self.wxMonitor.setDebugLevel(telescopiumMainControl['debugLevel'])
-            self.wxMonitor.setDebugCommLevel(telescopiumMainControl['debugCommLevel'])
-            self.wxMonitor.setTempThreshold(telescopiumMainControl['wxMonitorTempThreshold'])
-            self.wxMonitor.openPort()
-            self.wxMonitor.checkIdent()
-            self.wxMonitorPortOpen = True
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in connectWxMonitor"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def startDcPowerSwitch(self,telescopiumMainControl) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'connectDcPowerSwitch')
-            self.dcPowerSwitch = DCPowerSwitch()
-            self.dcPowerSwitch.setSerialPortStr(telescopiumMainControl['dcPowerSwitchSerialPortStr'])
-            self.dcPowerSwitch.setPaceDelay(telescopiumMainControl['serialPortPaceDelay'])
-            self.dcPowerSwitch.setDebugLevel(telescopiumMainControl['debugLevel'])
-            self.dcPowerSwitch.setDebugCommLevel(telescopiumMainControl['debugCommLevel'])
-            self.dcPowerSwitch.openPort()
-            self.dcPowerSwitch.checkIdent()
-            self.dcPowerSwitchPortOpen = True
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in connectDcPowerSwitch"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def setAllSwOff(self,sleepTime) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'setAllSwOff')
-            self.dcPowerSwitch.setSwOff(0)
-            self.dcPowerSwitch.setSwOff(1)
-            self.dcPowerSwitch.setSwOff(2)
-            self.dcPowerSwitch.setSwOff(3)
-            self.dcPowerSwitch.setSwOff(4)
-            self.dcPowerSwitch.setSwOff(5)
-            self.dcPowerSwitch.setSwOff(6)
-            self.dcPowerSwitch.setSwOff(7)
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,f'Sleep {sleepTime}sec for all to settle')
-            time.sleep(sleepTime)
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in setAllSwOff"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def setAllSwOn(self,leaveLightOn,sleepTime) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'setAllSwOn')
-            self.dcPowerSwitch.setSwOn(0)
-            self.dcPowerSwitch.setSwOn(1)
-            self.dcPowerSwitch.setSwOn(2)
-            self.dcPowerSwitch.setSwOn(3)
-            self.dcPowerSwitch.setSwOn(4)
-            self.dcPowerSwitch.setSwOn(5)
-            self.dcPowerSwitch.setSwOn(6)
-            self.dcPowerSwitch.setSwOn(7)
-            if leaveLightOn:
-                self.dcPowerSwitch.setSwOn(6)
-            else:
-                self.dcPowerSwitch.setSwOff(6)
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,f'Sleep {sleepTime}sec for all to settle')
-            time.sleep(sleepTime)
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in setAllSwOn"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def setPathsForTonight(self) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'setPaths')
-            dateStringForTonight = datetime.datetime.now().strftime("%Y%m%d")
-            self.filePathBias    = self.telescopiumLibraryPath + 'Bias/'      + dateStringForTonight
-            self.filePathFlats   = self.telescopiumLibraryPath + 'Flats/'     + dateStringForTonight
-            self.filePathDarks   = self.telescopiumLibraryPath + 'Darks/'     + dateStringForTonight
-            self.filePathLights  = self.telescopiumLibraryPath + 'Lights/'    + dateStringForTonight
-
-            self.filePathBias    = self.telescopiumLibraryPath + dateStringForTonight
-            self.filePathFlats   = self.telescopiumLibraryPath + dateStringForTonight
-            self.filePathDarks   = self.telescopiumLibraryPath + dateStringForTonight
-            self.filePathLights  = self.telescopiumLibraryPath + dateStringForTonight
-            global filePathLog
-            filePathLog          = self.telescopiumLibraryPath + dateStringForTonight
-            return
-        except:
-           ExcMsg="Exception in " + self.deviceKind + " unexpected error in setPsetPathsForTonightaths"
-           writeLog(True,"",self.deviceKind,ExcMsg)
-           raise Exception(ExcMsg)
-
-    def startDomeController(self,telescopiumMainControl) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'connectDomeController')
-            self.domeController = DomeController()
-            self.domeController.setSerialPortStr(telescopiumMainControl['domeControllerSerialPortStr'])
-            self.domeController.setDebugLevel(telescopiumMainControl['debugLevel'])
-            self.domeController.setDebugCommLevel(telescopiumMainControl['debugCommLevel'])
-            self.domeController.openPort()
-            self.domeController.checkIdent()
-            self.domeController.Activate=True
-            self.domeControllerPortOpen = True
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in startDomeController"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def startParkDetector(self,telescopiumMainControl) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'connectParkDetector')
-            self.parkDetector = ParkDetector()
-            self.parkDetector.setSerialPortStr(telescopiumMainControl['parkDetectorSerialPortStr'])
-            self.parkDetector.setPaceDelay(telescopiumMainControl['serialPortPaceDelay'])
-            self.parkDetector.setDebugCommLevel(telescopiumMainControl['debugCommLevel'])
-            self.parkDetector.setDebugLevel(telescopiumMainControl['debugLevel'])
-            self.parkDetector.openPort()
-            self.parkDetector.checkIdent()
-            self.parkDetectorPortOpen = True
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,f"sleep {telescopiumMainControl['sleepForMount']}sec for Mount to power up")
-            self.sleep(telescopiumMainControl['sleepForMount'])
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in startParkDetector"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def startMount(self,telescopiumMainControl) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'startMount')
-            self.telescopeMount = Mount()
-            self.telescopeMount.setDebugLevel(telescopiumMainControl['debugLevel'])
-            self.telescopeMount.setDebugCommLevel(telescopiumMainControl['debugCommLevel'])
-            self.telescopeMount.connectAndDoNotUnpark()
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in startMount"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def startMainCamera(self,telescopiumMainControl) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'startMainCamera')
-            self.mainCamera = MainCamera()
-            self.mainCamera.setDebugLevel(telescopiumMainControl['debugLevel'])
-            self.mainCamera.setDebugCommLevel(telescopiumMainControl['debugCommLevel'])
-            self.mainCamera.connect()
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in startMainCamera"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-
-    def startMainFilter(self,telescopiumMainControl) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'startMainFilter')
-            self.mainFilter = MainFilter()
-            self.mainFilter.setDebugLevel(telescopiumMainControl['debugLevel'])
-            self.mainFilter.setDebugCommLevel(telescopiumMainControl['debugCommLevel'])     
-            
-            command = ""\
-                    + "var temp=SelectedHardware.filterWheelModel;" \
-                    + "var Out;" \
-                    + "Out=temp+\"\\n\";"
-            (success, result, message) = skyXsendCndWithReturn(self.mainFilter,command)
-
-            print(result)
-            if 'No Filter Wheel Selected' in result:
-                self.mainFilter.kind = 'OSC'
-            else:
-                self.mainFilter.kind = 'FilterWheel'  
-            print(self.mainFilter.kind)
-                              
-            self.mainFilter.connect()
-            self.mainFilter.getNumbFilters()
-            self.mainFilter.getFilterNames()            
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in startMainFilter"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def startFocuser(self,telescopiumMainControl) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'startFocuser')
-            self.focuser = Focuser()
-            self.focuser.setDebugLevel(telescopiumMainControl['debugLevel'])
-            self.focuser.setDebugCommLevel(telescopiumMainControl['debugCommLevel'])
-            self.focuser.numbDwell = telescopiumMainControl['numbDwell']
-            self.focuser.setTempCurve(telescopiumMainControl['focStepInt'],telescopiumMainControl['focStepSlope'])
-            self.focuser.connect()
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in startFocuser"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def startGuider(self,telescopiumMainControl) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'startGuider')
-            self.guider = Guider()
-            self.guider.setDebugLevel(telescopiumMainControl['debugLevel'])
-            self.guider.setDebugCommLevel(telescopiumMainControl['debugCommLevel'])
-            self.guider.connect()
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in startGuider"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def plateSolve(self) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'solveWCS')
-        try:
-            self.imageScale=0.78
-            command = ""\
-                    + f'ImageLink.pathToFITS = "{self.mainCamera.lastSaveFilePath}/{self.mainCamera.lastFileName}";' \
-                    + f"ImageLink.scale = {self.imageScale};" \
-                    + "ImageLink.execute();" \
-                    + "var Out=ImageLinkResults.errorCode;" \
-                    + "Out += '/' + ImageLinkResults.succeeded;" \
-                    + "Out += '/' + ImageLinkResults.searchAborted;" \
-                    + "Out += '/' + ImageLinkResults.errorText;" \
-                    + "Out += '/' + ImageLinkResults.imageScale;" \
-                    + "Out += '/' + ImageLinkResults.imagePositionAngle;" \
-                    + "Out += '/' + ImageLinkResults.imageCenterRAJ2000;" \
-                    + "Out += '/' + ImageLinkResults.imageCenterDecJ2000;" \
-                    + "Out += '/' + ImageLinkResults.imageFWHMInArcSeconds;" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            #writeLog(self.debugLevl,"",self.deviceKind,returned_value)
-            parts = returned_value.split("/")
-            returnInfo = {}
-            returnInfo['errorCode'] = (parts[0])
-            returnInfo['succeeded'] = (parts[1])
-            returnInfo['searchAborted'] = (parts[2])
-            returnInfo['errorText'] = (parts[3])
-            returnInfo['imageScale'] = float(parts[4])
-            returnInfo['imagePositionAngle'] = float(parts[5])
-            returnInfo['imageCenterRAJ2000'] = float(parts[6])
-            returnInfo['imageCenterDecJ2000'] = float(parts[7])
-            returnInfo['imageFWHMInArcSeconds'] = float(parts[8])
-            return returnInfo
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in solveWCS"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def plateSolve2(self) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'solveWCS')
-        try:
-            self.imageScale=0.78
-            command = ""\
-                    + "img = ccdsoftCameraImage;" \
-                    + f'img.Path = "{self.mainCamera.lastSaveFilePath}/{self.mainCamera.lastFileName}";' \
-                    + 'img.Open();' \
-                    + 'img.ScaleInArcsecondsPerPixel=0.78;' \
-                    + 'img.InsertWCS();' \
-                    + 'img.Save();' \
-                    + 'img.Close();' \
-                    + "var Out=12;" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            #writeLog(self.debugLevl,"",self.deviceKind,returned_value)
-            parts = returned_value.split("/")
-            returnInfo = {}
-            # returnInfo['errorCode'] = (parts[0])
-            # returnInfo['succeeded'] = (parts[1])
-            # returnInfo['searchAborted'] = (parts[2])
-            # returnInfo['errorText'] = (parts[3])
-            # returnInfo['imageScale'] = float(parts[4])
-            # returnInfo['imagePositionAngle'] = float(parts[5])
-            # returnInfo['imageCenterRAJ2000'] = float(parts[6])
-            # returnInfo['imageCenterDecJ2000'] = float(parts[7])
-            # returnInfo['imageFWHMInArcSeconds'] = float(parts[8])
-            return returnInfo
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in solveWCS"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def setCameraTempTarget(self,deltaTemp,a_list,b_list) -> ():
-        try:
-            self.tempSetPointForTonight=([item for item in a_list if item >= (self.wxMonitor.getAmbTemp()-deltaTemp)])
-            self.tempSetPointForTonight=b_list[len(self.tempSetPointForTonight)]
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('Amb %5.1f, MinSetPoint %5.1f, Selected SetPt %5.1f '%(self.wxMonitor.getAmbTemp(),self.wxMonitor.getAmbTemp()-deltaTemp,self.tempSetPointForTonight)).strip())
-            if (self.tempSetPointForTonight<-20) or (self.tempSetPointForTonight>0):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
-                raise Exception(ExcMsg)
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in setCameraTempTarget"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def isSafeToHome(self) -> (bool):
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'Checking if safeToHome')
-            timeNowUTC = Time.now()
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('timeNowUT  =',timeNowUTC).strip())
-            self.mountHome = AltAz(alt=self.homeLocAlt*u.deg,az=self.homeLocAz*u.deg,obstime=timeNowUTC, location=self.obsLocation)
-            self.mountHome = self.mountHome.transform_to(ICRS())
-            self.mountHome = SkyCoord(self.mountHome.ra.value, self.mountHome.dec.value, frame='icrs', unit='deg')
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('Mx Home    =',self.mountHome.to_string('hmsdms')).strip())
-            sun=get_sun(timeNowUTC)
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('Sun        =',sun.to_string('hmsdms')).strip())
-            self.k=sun.separation(self.mountHome).deg
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('Seperation = %6.2f'%(self.k)).strip())
-            safeToHome = self.k > self.minimumSafeToHomeAngle
-            return safeToHome
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in isSafeToHome"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def calculateFlatSkyLoc(self) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'Calculating flat skyLoc')
-
-            timeNowUTC = Time.now()
-            frames = AltAz(obstime=timeNowUTC, location=self.obsLocation)
-            sun  = get_sun (timeNowUTC)
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('Sun  (RaDec)=',sun.to_string('hmsdms')).strip())
-
-            sunAzAlt  = get_sun (timeNowUTC).transform_to(frames)
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('Sun  (AzAlt)=',sunAzAlt.to_string('hmsdms')).strip())
-
-            self.flatSpot = AltAz(alt=self.flatSpotAltitude*u.deg,az=(sunAzAlt.az.value+180)*u.deg,obstime=timeNowUTC, location=self.obsLocation)
-            self.flatSpot = self.flatSpot.transform_to(ICRS())
-            self.flatSpot = SkyCoord(self.flatSpot.ra.value, self.flatSpot.dec.value, frame='icrs', unit='deg')
-
-            flatSpotAzAlt  = self.flatSpot.transform_to(frames)
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('Flat (AzAlt)=',flatSpotAzAlt.to_string('hmsdms')).strip())
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('Flat (RaDec)=',self.flatSpot.to_string('hmsdms')).strip())
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in calculateFlatSkyLoc"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def slewToFlat(self) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'Slew to flat skyLoc')
-            self.telescopeMount.slew(self.flatSpot.ra.hour,self.flatSpot.dec.value)
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in slewToFlat"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def runFocus(self) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'runFocus')
-            self.focuser.meanFocusPosition = 0
-            for sequenceNdx in range(self.focuser.numbDwell):
-                self.focuser.moveToTempCurve()
-                self.focuser.focus2()
-
-                self.loadFocuserDataSet()
-                self.focuserDataSet.loc[len(self.focuserDataSet)] = {'DateTime':Time.now(), 'Temperature':self.focuser.getTemp(), 'Step':self.focuser.getPosition()}
-                self.saveFocuserDataSet()
-
-                p=numpy.polyfit(self.focuserDataSet['Temperature'].values, self.focuserDataSet['Step'].values, 1)
-                self.focuser.setTempCurve(p[1],p[0])
-                self.focuser.meanFocusPosition += self.focuser.getPosition()/self.focuser.numbDwell
-            self.focuser.moveTo(self.focuser.meanFocusPosition)
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in runFocus"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def pointingCorrection(self) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'pointingCorrection')
-            frameType       = 'Light'
-            temp            = int(self.mainCamera.getTempSetPoint())
-            objName         = self.workList.loc[self.workItemRowNdx].objName+'PointingExp'
-            filterName      = 'OSC'
-            exposure        = 10
-            binning         = 2
-            imageReduction  = 0
-            sequence        = 0
-            autoSaveFile    = False
-            asyncMode       = False
-
-            self.mainCamera.takeLightFrame(exposure,binning,imageReduction,autoSaveFile,asyncMode)
-            self.mainCamera.saveImgToFile(self.filePathLights,frameType,temp,objName,filterName,exposure,binning,sequence)
-            returnInfo=self.plateSolve()
-            actualRaHrs  = returnInfo['imageCenterRAJ2000']
-            actualDecVal = returnInfo['imageCenterDecJ2000']
-
-            deltaRaMin   = (actualRaHrs -self.workList.loc[self.workItemRowNdx].skyCoordRaHrsJ2000 )*60*(360/24)*math.cos(returnInfo['imageCenterDecJ2000']*math.pi/180.0)
-            deltaDecMin  = (actualDecVal-self.workList.loc[self.workItemRowNdx].skyCoordDecValJ2000)*60
-            writeLog(True,self.currentState,'',f'{self.workList.loc[self.workItemRowNdx].skyCoordRaHrsJ2000},{actualRaHrs},{deltaRaMin}')
-            writeLog(True,self.currentState,'',f'{self.workList.loc[self.workItemRowNdx].skyCoordDecValJ2000},{actualDecVal},{deltaDecMin}')
-
-            self.telescopeMount.jogRa(-deltaRaMin)
-            self.telescopeMount.jogDec(-deltaDecMin)
-
-            sequence        = 1
-            self.mainCamera.takeLightFrame(exposure,binning,imageReduction,autoSaveFile,asyncMode)
-            self.mainCamera.saveImgToFile(self.filePathLights,frameType,temp,objName,filterName,exposure,binning,sequence)
-            returnInfo=self.plateSolve()
-            actualRaHrs  = returnInfo['imageCenterRAJ2000']
-            actualDecVal = returnInfo['imageCenterDecJ2000']
-            deltaRaMin   = (actualRaHrs -self.workList.loc[self.workItemRowNdx].skyCoordRaHrsJ2000 )*60*(360/24)*math.cos(returnInfo['imageCenterDecJ2000']*math.pi/180.0)
-            deltaDecMin  = (actualDecVal-self.workList.loc[self.workItemRowNdx].skyCoordDecValJ2000)*60
-            writeLog(True,self.currentState,'',f'{self.workList.loc[self.workItemRowNdx].skyCoordRaHrsJ2000},{actualRaHrs},{deltaRaMin}')
-            writeLog(True,self.currentState,'',f'{self.workList.loc[self.workItemRowNdx].skyCoordDecValJ2000},{actualDecVal},{deltaDecMin}')
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in pointingCorrection"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def dither(self) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'dither')
-            minDitherArcSec = 4
-            maxDitherArcSec = 10
-            DitherXarcMin = ((random.random() * (maxDitherArcSec - minDitherArcSec +1)) + minDitherArcSec) / 60
-            DitherYarcMin = ((random.random() * (maxDitherArcSec - minDitherArcSec +1)) + minDitherArcSec) / 60
-            if (math.floor(random.random() * 2)) == 0:
-                NorS = 'N'
-            else:
-                NorS = 'S'
-            if (math.floor(random.random() * 2)) == 0:
-                EorW = 'E'
-            else:
-                EorW = 'W'
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,f'{60*DitherXarcMin}"{NorS} {60*DitherYarcMin}"{EorW}')
-            self.telescopeMount.jog(DitherXarcMin, NorS, DitherYarcMin, EorW)
-            return
-        except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in dither"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            raise Exception(ExcMsg)
-
-    def loadFocuserDataSet(self) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'loadFocuserDataSet')
-            self.focuserDataSet = pd.read_excel(self.telescopiumLibraryPath +'focuserDataSet.ods')
-            if self.focuserDataSet.shape[0]==0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
-                raise Exception(ExcMsg)
-            return
-        except:
-           ExcMsg="Exception in " + self.deviceKind + " unexpected error in loadFocuserDataSet"
-           writeLog(True,"",self.deviceKind,ExcMsg)
-           raise Exception(ExcMsg)
-
-
-    def saveFocuserDataSet(self) -> ():
-        try:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'saveFocuserDataSet')
-            self.focuserDataSet.to_excel(self.telescopiumLibraryPath +'focuserDataSet.ods',index=False)
-            if 1==0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
-                raise Exception(ExcMsg)
-            return
-        except:
-           ExcMsg="Exception in " + self.deviceKind + " unexpected error in saveFocuserDataSet"
-           writeLog(True,"",self.deviceKind,ExcMsg)
-           raise Exception(ExcMsg)
-
-    def sleep(self,sleepTimeSec) -> ():
-        writeLog(self.debugLevl,self.currentState,self.deviceKind,f'Sleeping {sleepTimeSec}')
+    #############################################################################
+    # Time related methods
+    #
+    def sleep(self,sleepTimeSec):
         time.sleep(sleepTimeSec)
-        return
+        retInfo = True
+        return retInfo
 
-    def closePorts(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def pause(self):
+        writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Pause... ')
+        input('pause')
+        retInfo = True
+        return retInfo
+
+    #############################################################################
+    # serial port related methods
+    #
+    def closePorts(self):
+        writeLog(self.verboseLevel>0,self.currentState,self.deviceKind,currentFuncName(),'Enter method')
         if self.wxMonitorPortOpen:
-            writeLog(self.debugLevl,self.currentState,'','Close serial port to Wx Monitor')
             self.wxMonitor.closePort()
         if self.dcPowerSwitchPortOpen:
-            writeLog(self.debugLevl,self.currentState,'','Close serial port to DC power switch')
             self.dcPowerSwitch.closePort()
         if self.domeControllerPortOpen:
-            writeLog(self.debugLevl,self.currentState,'','Closing Dome Controller')
             self.domeController.closePort()
         if self.parkDetectorPortOpen:
-            writeLog(self.debugLevl,self.currentState,'','Closing Park Detector')
             self.parkDetector.closePort()
-        return
+        retInfo = True
+        return retInfo
 
-    def _startNew(self,getNewInstance,procName,cmdStr):
-        writeLog(self.debugLevl,self.currentState,self.deviceKind,procName+' testing if running')
-        if checkIfProcessRunning(procName):
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,procName+' was running')
-            if(getNewInstance):
-                writeLog(self.debugLevl,self.currentState,self.deviceKind,'Terminating '+procName)
-                theskyXProc = getProcessRunning(procName)
-                theskyXProc.terminate()
-                theskyXProc.wait()
-                time.sleep(10)
-                if checkIfProcessRunning(procName):
-                    writeLog(self.debugLevl,self.currentState,self.deviceKind,'Could not terminate '+procName)
-                    raise Exception('Could not terminate '+procName)
-                    subProc = 0
-                else:
-                    writeLog(self.debugLevl,self.currentState,self.deviceKind,'Starting New '+procName)
-                    if platform.system() == "Linux" :
-                        subProc = subprocess.Popen(cmdStr, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    else :
-                        subProc = subprocess.Popen(cmdStr)
-                    time.sleep(10)
-            else:
-                writeLog(self.debugLevl,self.currentState,self.deviceKind,procName+' did not need to make another')
-        else:
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'Was not running, starting new instance'+procName)
-            if platform.system() == "Linux" :
-                subProc = subprocess.Popen(cmdStr, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            else :
-                subProc = subprocess.Popen(cmdStr)
-            time.sleep(10)
-        writeLog(self.debugLevl,self.currentState,self.deviceKind,procName+' returning')
-        subProc=getProcessRunning(procName)
-        #if not(checkIfProcessRunning(procName)):
-        #    writeLog(self.debugLevl,self.currentState,self.deviceKind,'Could not start '+procName)
-        #    raise Exception('Could not start '+procName)
-        #    subProc = 0
-        return subProc
+#############################################################################
+# Method
+#
+def writeLog(verboseLevel,ObsState,device,method,logcomment):
+    logLine = ptos(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),' | %15s | %15s | %20s | %s'%(ObsState, device, method,logcomment))
 
-    def _stopProc(self,procName,cmdStr):
-        writeLog(self.debugLevl,self.currentState,self.deviceKind,procName+' testing if running')
-        if checkIfProcessRunning(procName):
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,procName+' was running')
-            writeLog(self.debugLevl,self.currentState,self.deviceKind,'Terminating '+procName)
-            theskyXProc = getProcessRunning(procName)
-            theskyXProc.terminate()
-            theskyXProc.wait()
-            time.sleep(10)
-            if checkIfProcessRunning(procName):
-                writeLog(self.debugLevl,self.currentState,self.deviceKind,'Could not terminate '+procName)
-                raise Exception('Could not terminate '+procName)
-        return
+    if verboseLevel:print(logLine.strip())
 
-    def pause(self) -> ():
-        writeLog(self.debugLevl,self.currentState,self.deviceKind,'Pause... ')
-        input('pause')
-        return
+    if not os.path.exists(filePathLog):os.makedirs(filePathLog)
+    with open(filePathLog+'/telescopium.log', 'a') as the_file:the_file.write(logLine)
 
-    # def takeImgSeqAsync(self,saveImg,expSeq,filePath,filePrefix):
-    #     foo= dict({'Light':1,'Bias':2,'Dark':3,'Flat':4})
-    #     MESSAGE = '/* Java Script */'\
-    #     +'ccdsoftCamera.Connect();'\
-    #     +'ccdsoftCamera.Asynchronous = true; '\
-    #     +'ccdsoftCamera.ExposureTime = ' + str(expSeq.exp) + ';'\
-    #     +'ccdsoftCamera.AutoSaveOn = false;'\
-    #     +'ccdsoftCamera.ImageReduction = 0;   '\
-    #     +'ccdsoftCamera.Frame = ' + str(foo[expSeq.frame]) + ';'\
-    #     +'ccdsoftCamera.Delay = ' + str(expSeq.delay) + ';'\
-    #     +'ccdsoftCamera.Subframe = false;'\
-    #     +'ccdsoftCamera.filterWheelConnect(); '\
-    #     +'ccdsoftCamera.FilterIndexZeroBased = ' + str(self.mainFilter.filterNdx[expSeq.filterName]) + ';'\
-    #     +'ccdsoftCamera.BinX = ' + str(expSeq.bin) + ';'\
-    #     +'ccdsoftCamera.BinY = ' + str(expSeq.bin) + ';'\
-    #     +'var cameraResult = ccdsoftCamera.TakeImage();'
-    #     for ndx in range(expSeq.rep):
-    #         writeLog(self.debugLevl,self.currentState,self.deviceKind,ptos('Taking image %d of %d, %dsec  %dx%d'%(ndx+1,expSeq.rep,expSeq.exp,expSeq.filterName,expSeq.bin,expSeq.bin)).strip())
-    #         if skyxExpect(self,'takeimage',MESSAGE,'No error. Error = 0.'):
-    #             writeLog(self.debugLevl,self.currentState,self.deviceKind,'Takeimage started')
-    #             while not(self.mainCamera.isExposing()):
-    #                 time.sleep(1)
-    #                 if not(self.wxMonitor.isClear()):
-    #                     break
-    #             if not(self.wxMonitor.isClearBool):
-    #                 break
-    #             if saveImg:
-    #                 self.fullPath = self.mainCamera.saveImgToFile(self.mainFilter,filePath,filePrefix,expSeq,ndx+1)
-    #         else:
-    #             ExcMsg="Exception in " + self.deviceKind + "skyxExpect returned with errors"
-    #             writeLog(self.debugLevl,self.currentState,self.deviceKind+ExcMsg)
-    #             raise Exception(ExcMsg)
-
-def writeLog(debugLevl,ObsState,device,logcomment) -> ():
-    if debugLevl:
-        if not os.path.exists(filePathLog):
-            os.makedirs(filePathLog)
-        logLine = ptos(Time.now(),' : %15s : %15s : %s'%(ObsState, device, logcomment))
-        print(logLine.strip())
-        with open(filePathLog+'/telescopium.log', 'a') as the_file:
-            the_file.write(logLine)
-    return
-
+    retInfo = True
+    return retInfo
 
 #############################################################################
 #
@@ -1126,116 +1684,164 @@ def writeLog(debugLevl,ObsState,device,logcomment) -> ():
 class DCPowerSwitch:
     def __init__(self):
         self.deviceKind = 'DC Power Switch'
-        self.paceDelay = 2
-        self.debugLevl=False
-        self.debugCommLevel=False
 
-    def setDebugLevel(self,debugLevl) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugLevl to '+str(debugLevl))
-        self.debugLevl = debugLevl
-        return
-
-    def setDebugCommLevel(self,debugCommLevel) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugCommLevel to '+str(debugCommLevel))
-        self.debugCommLevel = debugCommLevel
-        return
-
-    def setSerialPortStr(self,serialPortString) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting serialPortStr to '+serialPortString)
+    #############################################################################
+    # Method
+    #
+    def setSerialPortStr(self,serialPortString):
+        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
         self.serialPortStr = serialPortString
-        return
+        retInfo = True
+        return retInfo
 
-    def setPaceDelay(self,paceDelay) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting paceDelay to '+str(paceDelay))
-        self.paceDelay = paceDelay
-        return
-
-    def openPort(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def openPort(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'Opening serial port {self.serialPortStr}')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.serPort = serial.Serial(self.serialPortStr,timeout=10)  # open serial port
             time.sleep(5)
             self.serPort.baudrate = 19200
             if not(self.serPort.isOpen()):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in openPort"
-            writeLog(True,"",self.deviceKind,ExcMsg)
-            writeLog(self.debugLevl,"",self.deviceKind,'IOError happned')
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def closePort(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def closePort(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Closing serial port')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.serPort.close()
             if 0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in closePort"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def checkIdent(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def checkIdent(self):
         try:
-            writeLog(True,"",self.deviceKind,'Checking Identity')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.getSw(0)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in checkIdent"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def setSwOff(self,id) -> ():
+    #############################################################################
+    # Method
+    #
+    def setSwOff(self,id):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'Setting SwOff for SW {id}')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             buffer = [4,18,2**id,0,0,0,15]
             buffer[5] = (((buffer[0]+buffer[1]+buffer[2])^255) & 255) + 1
             self.serPort.write(bytes(buffer))
-            time.sleep(self.paceDelay)
-            writeLog(self.debugCommLevel,"",self.deviceKind,'    SENT Command  : >'+ptos(buffer).strip()+'<')
+            time.sleep(self.serialPortPaceDelay)
+            writeLog(self.debugCommLevel,'',self.deviceKind,currentFuncName(),'    SENT : >'+ptos(buffer).strip()+'<')
             if not(self.getSw(id)==0):
-                ExcMsg="Exception in " + self.deviceKind + " switch did not turn off"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in setSwOff"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def setSwOn(self,id) -> ():
+    #############################################################################
+    # Method
+    #
+    def setSwOn(self,id):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'Setting SwOn for SW {id}')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             buffer = [4,17,2**id,0,0,0,15]
             buffer[5] = (((buffer[0]+buffer[1]+buffer[2])^255) & 255) + 1
             self.serPort.write(bytes(buffer))
-            time.sleep(self.paceDelay)
-            writeLog(self.debugCommLevel,"",self.deviceKind,'    SENT Command  : >'+ptos(buffer).strip()+'<')
+            time.sleep(self.serialPortPaceDelay)
+            writeLog(self.debugCommLevel,'',self.deviceKind,currentFuncName(),'    SENT : >'+ptos(buffer).strip()+'<')
             if not(self.getSw(id)==1):
-                ExcMsg="Exception in " + self.deviceKind + " switch did not turn on"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in setSwOn"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getSw(self,id) -> (bool):
+    #############################################################################
+    # Method
+    #
+    def getSw(self,id):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Get Switch state')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             buffer = [4,24,0,0,0,0,15]
             buffer[5] = (((buffer[0]+buffer[1]+buffer[2])^255) & 255) + 1
             self.serPort.reset_input_buffer()
             self.serPort.write(bytes(buffer))
-            time.sleep(self.paceDelay)
-            writeLog(self.debugCommLevel,"",self.deviceKind,'    SENT Command  : >'+ptos(buffer).strip()+'<')
+            time.sleep(self.serialPortPaceDelay)
+            writeLog(self.debugCommLevel,'',self.deviceKind,currentFuncName(),'    SENT : >'+ptos(buffer).strip()+'<')
 
             self.responce=self.serPort.read(7)
 
@@ -1247,20 +1853,28 @@ class DCPowerSwitch:
             buffer[5]=self.responce[5]
             buffer[6]=self.responce[6]
 
-            writeLog(self.debugCommLevel,"",self.deviceKind,'    RXED Response : >'+ptos(buffer).strip()+'<')
+            writeLog(self.debugCommLevel,'',self.deviceKind,currentFuncName(),'    RXED : >'+ptos(buffer).strip()+'<')
 
             if not(buffer[5] == (((buffer[0]+buffer[1]+buffer[2]+buffer[3])^255) & 255) + 1):
-                ExcMsg="Exception in " + self.deviceKind + " Shecksum fail"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
 
-            writeLog(self.debugLevl,"",self.deviceKind,'Switch '+ str(id) +' state is ' + str(((buffer[3]>>id) & 1)))
-            return((buffer[3]>>id) & 1)
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Switch '+ str(id) +' state is ' + str(((buffer[3]>>id) & 1)))
+            retInfo = ((buffer[3]>>id) & 1)
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in getSw"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
-
 
 #############################################################################
 #
@@ -1269,156 +1883,251 @@ class DCPowerSwitch:
 class ParkDetector:
     def __init__(self):
         self.deviceKind = 'Park Detector'
-        self.paceDelay = 1
         self.sleepTimeForUserInput = 1
-        self.debugLevl=False
-        self.debugCommLevel=False
 
-    def setDebugLevel(self,debugLevl) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugLevl to '+str(debugLevl))
-        self.debugLevl = debugLevl
-        return
-
-    def setDebugCommLevel(self,debugCommLevel) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugCommLevel to '+str(debugCommLevel))
-        self.debugCommLevel = debugCommLevel
-        return
-
-    def setSerialPortStr(self,serialPortString) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting serialPortStr to '+serialPortString)
+    #############################################################################
+    # Method
+    #
+    def setSerialPortStr(self,serialPortString):
+        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
         self.serialPortStr = serialPortString
-        return
+        retInfo = True
+        return retInfo
 
-    def setPaceDelay(self,paceDelay) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting paceDelay to '+str(paceDelay))
-        self.paceDelay = paceDelay
-        return
-
-    def openPort(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def openPort(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'Opening serial port {self.serialPortStr}')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.serPort = serial.Serial(self.serialPortStr,timeout=10)  # open serial port
             time.sleep(5)
             self.serPort.baudrate = 9600
             if not(self.serPort.isOpen()):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in openPort"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def closePort(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def closePort(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'closing serial port')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.serPort.close()
             if 0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in closePort"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def checkIdent(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def checkIdent(self):
         try:
-            writeLog(True,"",self.deviceKind,'Checking Identity')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             if not(serialExpect(self,'IDENT','ParkDetector')):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in checkIdent"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def FrcMntOn(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def FrcMntOn(self):
         try:
-            writeLog(True,"",self.deviceKind,'FrcMntOn')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             if not(serialExpect(self,'FrcMntOn','FrcMntOn')):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
             time.sleep(10)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in FrcMntOn"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def FrcMntOff(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def FrcMntOff(self):
         try:
-            writeLog(True,"",self.deviceKind,'FrcMntOff')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             if not(serialExpect(self,'FrcMntOff','FrcMntOff')):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
             time.sleep(10)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in FrcMntOff"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def FrcPPOn(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def FrcPPOn(self):
         try:
-            writeLog(True,"",self.deviceKind,'FrcPPOn')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             if not(serialExpect(self,'FrcPPOn','FrcPPOn')):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
             time.sleep(10)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in FrcPPOn"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def FrcPPOff(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def FrcPPOff(self):
         try:
-            writeLog(True,"",self.deviceKind,'FrcPPOff')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             if not(serialExpect(self,'FrcPPOff','FrcPPOff')):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
             time.sleep(10)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in FrcPPOff"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getAll(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def getAll(self):
         try:
-            self.responce = serialSend(self,'GetAll')
-            writeLog(self.debugLevl,"",self.deviceKind,f'Getting all data ={self.responce}')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'Getting all data ={self.responce}')
             return self.responce
             if 0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " getAll"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def isParked(self) -> (bool):
+    #############################################################################
+    # Method
+    #
+    def isParked(self):
         try:
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             isParked = serialExpect(self,'isParked','Parked')
             if isParked:
-                writeLog(self.debugLevl,"",self.deviceKind,'Checking is parked = parked')
+                writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Checking is parked = parked')
             else:
-                writeLog(self.debugLevl,"",self.deviceKind,'Checking is parked = not parked')
-            return isParked
+                writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Checking is parked = not parked')
+            retInfo = isParked
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in isParked"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
 #############################################################################
@@ -1428,157 +2137,268 @@ class ParkDetector:
 class DomeController:
     def __init__(self):
         self.deviceKind = 'Dome Controller'
-        self.paceDelay = 1
-        self.debugLevl=False
+        self.verboseLevel = 0
         self.debugCommLevel = False
 
-    def setDebugLevel(self,debugLevl) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugLevl to '+str(debugLevl))
-        self.debugLevl = debugLevl
-        return
+    #############################################################################
+    # Method
+    #
+    def setVerboseLevel(self,verboseLevel):
+        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+        self.verboseLevel = verboseLevel
+        retInfo = True
+        return retInfo
 
-    def setDebugCommLevel(self,debugCommLevel) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugCommLevel to '+str(debugCommLevel))
+    #############################################################################
+    # Method
+    #
+    def setDebugCommLevel(self,debugCommLevel):
+        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
         self.debugCommLevel = debugCommLevel
-        return
+        retInfo = True
+        return retInfo
 
-    def setSerialPortStr(self,serialPortString) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting serialPortStr to '+serialPortString)
+    #############################################################################
+    # Method
+    #
+    def setSerialPortStr(self,serialPortString):
+        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
         self.serialPortStr = serialPortString
-        return
+        retInfo = True
+        return retInfo
 
-    def setPaceDelay(self,paceDelay) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting paceDelay to '+str(paceDelay))
-        self.paceDelay = paceDelay
-        return
+    #############################################################################
+    # Method
+    #
+    def setPaceDelay(self,serialPortPaceDelay):
+        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+        self.serialPortPaceDelay = serialPortPaceDelay
+        retInfo = True
+        return retInfo
 
-    def openPort(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def openPort(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'Opening serial port {self.serialPortStr}')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.serPort = serial.Serial(self.serialPortStr,timeout=10)  # open serial port
             time.sleep(5)
             self.serPort.baudrate = 9600
             if not(self.serPort.isOpen()):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in openPort"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def closePort(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def closePort(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Closing serial port')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.serPort.close()
             if self.serPort.isOpen():
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in closePort"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def checkIdent(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def checkIdent(self):
         try:
-            writeLog(True,"",self.deviceKind,'Checking Identity')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             if not(serialExpect(self,'IDENT#','RoofRoller')):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in checkIdent"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def openRoof(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def openRoof(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Opening roof')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             if self.Activate:
                 if not(serialSend(self,'QUERYROOF#')=='is Open'):
                     if not(serialExpect(self,'OPENROOF#','OPENROOF Ack')):
-                        ExcMsg="Exception in " + self.deviceKind + ""
-                        writeLog(self.debugLevl,"",self.deviceKind+ExcMsg)
+                        ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),ExcMsg)
                         raise Exception(ExcMsg)
                     time.sleep(1)
                     while serialExpect(self,'QUERYROOF#','is Opening'):
                         time.sleep(5)
                     time.sleep(1)
                     if not(serialExpect(self,'QUERYROOF#','is Open')):
-                        ExcMsg="Exception in " + self.deviceKind + ""
-                        writeLog(self.debugLevl,"",self.deviceKind+ExcMsg)
+                        ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),ExcMsg)
                         raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in openRoof"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def closeRoof(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def closeRoof(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Closing roof')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             if self.Activate:
                 if not(serialSend(self,'QUERYROOF#')=='is Closed'):
                     if not(serialExpect(self,'CLOSEROOF#','CLOSEROOF Ack')):
-                        ExcMsg="Exception in " + self.deviceKind + ""
-                        writeLog(self.debugLevl,"",self.deviceKind+ExcMsg)
+                        ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),ExcMsg)
                         raise Exception(ExcMsg)
-                        return
                     time.sleep(1)
                     while serialExpect(self,'QUERYROOF#','is Closing'):
                         time.sleep(5)
                     time.sleep(1)
                     if not(serialExpect(self,'QUERYROOF#','is Closed')):
-                        ExcMsg="Exception in " + self.deviceKind + ""
-                        writeLog(self.debugLevl,"",self.deviceKind+ExcMsg)
+                        ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),ExcMsg)
                         raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in closeRoof"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def queryRoof(self) -> (str):
+    #############################################################################
+    # Method
+    #
+    def queryRoof(self):
         try:
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.responce = serialSend(self,'QUERYROOF#')
             if 0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return self.responce
+            retInfo =  self.responce
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in queryRoof"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def isOpen(self) -> (bool):
+    #############################################################################
+    # Method
+    #
+    def isOpen(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Confirm is open')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             if 0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return serialExpect(self,'QUERYROOF#','is Open')
+            retInfo =  serialExpect(self,'QUERYROOF#','is Open')
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in isOpen"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def isClosed(self) -> (bool):
+    #############################################################################
+    # Method
+    #
+    def isClosed(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Confirm is closed')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             if 0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return serialExpect(self,'QUERYROOF#','is Closed')
+            retInfo =  serialExpect(self,'QUERYROOF#','is Closed')
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in isClosed"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
 #############################################################################
@@ -1588,9 +2408,6 @@ class DomeController:
 class WxMonitor:
     def __init__(self):
         self.deviceKind = 'Wx Monitor'
-        self.paceDelay = 1
-        self.debugLevl = False
-        self.debugCommLevel=False
 
         self.deltaTemp = 99
         self.ambTemp = 99
@@ -1602,141 +2419,206 @@ class WxMonitor:
         self.timeBecameClear = Time.now()-u.s*120
 
         self.safeToOpenDelay_sec = 60
-
-
+        
         self.tempThreshold=20.0
 
-    def setDebugLevel(self,debugLevl) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugLevl to '+str(debugLevl))
-        self.debugLevl = debugLevl
-        return
-
-    def setDebugCommLevel(self,debugCommLevel) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugCommLevel to '+str(debugCommLevel))
-        self.debugCommLevel = debugCommLevel
-        return
-
-    def setSerialPortStr(self,serialPortString) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting serialPortStr to '+serialPortString)
+    #############################################################################
+    # Method
+    #
+    def setSerialPortStr(self,serialPortString):
+        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
         self.serialPortStr = serialPortString
-        return
+        retInfo = True
+        return retInfo
 
-    def setPaceDelay(self,paceDelay) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting paceDelay to '+str(paceDelay))
-        self.paceDelay = paceDelay
-        return
-
-    def openPort(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def openPort(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'Opening serial port {self.serialPortStr}')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.serPort = serial.Serial(self.serialPortStr,timeout=10)  # open serial port
             time.sleep(5)
             self.serPort.baudrate = 9600
             if not(self.serPort.isOpen()):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in openPort"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def closePort(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def closePort(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Closing serial port')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.serPort.close()
             if self.serPort.isOpen():
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in openPort"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def checkIdent(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def checkIdent(self):
         try:
-            writeLog(True,"",self.deviceKind,'Checking Identity')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             if not(serialExpect(self,'IDENT','wxStation')):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in checkIdent"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def setTempThreshold(self,tempThreshold) -> ():
+    #############################################################################
+    # Method
+    #
+    def setTempThreshold(self,tempThreshold):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'Setting tempThreshold to {tempThreshold}')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.tempThreshold = tempThreshold
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in setTempThreshold"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getAmbTemp(self) -> (float):
+    #############################################################################
+    # Method
+    #
+    def getAmbTemp(self):
         try:
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.ambTemp=float(serialSend(self,'T'))
             if 0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            writeLog(self.debugLevl,"",self.deviceKind,f'Getting ambient temperature {self.ambTemp}')
-            return self.ambTemp
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'Getting ambient temperature {self.ambTemp:.1f}C')
+            retInfo =  self.ambTemp
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in getAmbTemp"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getSkyTemp(self) -> (float):
+    #############################################################################
+    # Method
+    #
+    def getSkyTemp(self):
         try:
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.skyTemp=float(serialSend(self,'ST'))
             if 0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            writeLog(self.debugLevl,"",self.deviceKind,f'Getting sky temperature {self.skyTemp}')
-            return self.skyTemp
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'Getting sky temperature {self.skyTemp:.1f}C')
+            retInfo =  self.skyTemp
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in getSkyTemp"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def isClear(self) -> (bool):
+    #############################################################################
+    # Method
+    #
+    def isClear(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Getting isClear')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self.getAmbTemp()
             self.getSkyTemp()
             self.deltaTemp=self.ambTemp-self.skyTemp
             self.wasClear = self.isClearNow
             self.isClearNow=self.deltaTemp>self.tempThreshold
-            writeLog(self.debugLevl,"",self.deviceKind, ptos('Amb%6.2f Sky%6.2f Diff%6.2f'%(self.ambTemp,self.skyTemp,self.deltaTemp)).strip())
-
+            writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(), ptos('Amb%6.2f Sky%6.2f Diff%6.2f'%(self.ambTemp,self.skyTemp,self.deltaTemp)).strip())
             if self.isClearNow and not self.wasClear:
                 self.timeBecameClear = Time.now()
-
             if self.isClearNow and ((Time.now()-self.timeBecameClear).sec > self.safeToOpenDelay_sec):
                 self.isClearBool = True
             else:
                 self.isClearBool = False
-
-            writeLog(self.debugLevl,"",self.deviceKind, ptos('wasClear %s, isClearNow %s, timeClear %f %s'%(self.wasClear,self.isClearNow,(Time.now()-self.timeBecameClear).sec,self.isClearBool)).strip())
-            if 0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
-                raise Exception(ExcMsg)
-
-            return self.isClearBool
+            writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(), ptos('wasClear %s, isClearNow %s, timeClear %f %s'%(self.wasClear,self.isClearNow,(Time.now()-self.timeBecameClear).sec,self.isClearBool)).strip())
+            retInfo =  self.isClearBool
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in isClear"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
-
 
 #############################################################################
 #
@@ -1745,404 +2627,687 @@ class WxMonitor:
 class Mount:
     def __init__(self):
         self.deviceKind = 'Mount'
-        self.paceDelay = 1
-        self.debugLevl = False
-        self.debugCommLevel = False
         self.postSlewPause = 2
 
-    def setDebugLevel(self,debugLevl) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugLevl to '+str(debugLevl))
-        self.debugLevl = debugLevl
-        return
-
-    def setDebugCommLevel(self,debugCommLevel) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugCommLevel to '+str(debugCommLevel))
-        self.debugCommLevel = debugCommLevel
-        return
-
-    def connect(self) -> ():
+    #############################################################################
+    # Method
+    # Expects >undefined|No error. Error = 0.<
+    #
+    def connect(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Connect Mount')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "sky6RASCOMTele.Connect();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
+            skyXcmd(self,command,allowErrors=False)
             if not(self.isConnected()):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in connect"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def isConnected(self) -> (bool):
+    #############################################################################
+    # Method
+    # exception on result value
+    #
+    def isConnected(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Query is isConnected')
-            command = ""\
-                    + "Out=sky6RASCOMTele.IsConnected;" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                (success, message) = check_for_error_in_return_value(returned_value)
-            writeLog(self.debugLevl,"",self.deviceKind,f'isConnected = {returned_value}')
-            if returned_value == 'false':
-                returned_value = False
-            elif returned_value == 'true':
-                returned_value = True
-            return returned_value
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
+                    + "Out=sky6RASCOMTele.IsConnected;" 
+            skyXresult = skyXcmd(self,command,allowErrors=True)                     
+            skyXparts = skyXresult.split("|")
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'isConnected = {skyXresult}')
+            if skyXparts[0] == '0':
+                result = False
+            elif skyXparts[0] == '1':
+                result = True
+            else:
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)                
+            retInfo =  result
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in isConnected"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-
-    def connectAndDoNotUnpark(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def connectDoNotUnpark(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Connect Mount')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "sky6RASCOMTele.ConnectAndDoNotUnpark();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
+            skyXcmd(self,command,allowErrors=False)
             if not(self.isConnected()):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in connectAndDoNotUnpark"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def disconnect(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def disconnect(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Disconnect Mount')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "sky6RASCOMTele.Disconnect();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in disconnect"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def disconnectTelescope(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def disconnectTelescope(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'DisconnectTelescope Mount')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "sky6RASCOMTheSky.DisconnectTelescope();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in disconnectTelescope"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def home(self, asyncMode: bool) -> ():
+    #############################################################################
+    # Method
+    #
+    def home(self, asyncMode: bool):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Starting Home Mount')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "sky6RASCOMTele.Connect();"\
                     + f"sky6RASCOMTele.Asynchronous={js_bool(asyncMode)};" \
-                    + "Out=sky6RASCOMTele.FindHome();" \
-                    + "Out += \"\\n\";"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            writeLog(self.debugLevl,"",self.deviceKind,'Home complete')
-            return
+                    + "sky6RASCOMTele.FindHome();" 
+            skyXcmd(self,command,allowErrors=False)
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Home complete')
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in home"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def park(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def park(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Starting Park Mount')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "sky6RASCOMTele.Asynchronous=false;" \
-                    + "Out=sky6RASCOMTele.Park();" \
-                    + "Out += \"\\n\";"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            writeLog(self.debugLevl,"",self.deviceKind,'Park complete')
-            return
+                    + "sky6RASCOMTele.Park();" 
+            skyXcmd(self,command,allowErrors=False)
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Park complete')
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in park"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def parkAndDoNotDisconnect(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def parkAndDoNotDisconnect(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Starting Park Mount')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "sky6RASCOMTele.Asynchronous=false;" \
-                    + "Out=sky6RASCOMTele.ParkAndDoNotDisconnect();" \
-                    + "Out += \"\\n\";"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            writeLog(self.debugLevl,"",self.deviceKind,'Park complete')
-            return
+                    + "sky6RASCOMTele.ParkAndDoNotDisconnect();"
+            skyXcmd(self,command,allowErrors=False)
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Park complete')
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in parkAndDoNotDisconnect"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def isParked(self) -> (bool):
+    #############################################################################
+    # Method
+    #
+    def isParked(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Query is Parked')
-            command = ""\
-                    + "Out=sky6RASCOMTele.IsParked();" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                (success, message) = check_for_error_in_return_value(returned_value)
-            writeLog(self.debugLevl,"",self.deviceKind,f'Parked = {returned_value}')
-            if returned_value == 'false':
-                returned_value = False
-            elif returned_value == 'true':
-                returned_value = True
-            return returned_value
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
+                    + "Out=sky6RASCOMTele.IsParked();" 
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'Parked = {skyXresult}')
+            if skyXparts[0] == 'false':
+                result = False
+            elif skyXparts[0] == 'true':
+                result = True
+            else:
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)                
+            retInfo =  result
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in isParked"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def unpark(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def unpark(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Starting Unpark Mount')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "sky6RASCOMTele.Connect();"\
-                    + "Out=sky6RASCOMTele.Unark();" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                (success, message) = check_for_error_in_return_value(returned_value)
-            writeLog(self.debugLevl,"",self.deviceKind,'Unpark completed')
-            return
+                    + "sky6RASCOMTele.Unark();" 
+            skyXcmd(self,command,allowErrors=False)
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Unpark completed')
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in unpark"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def slewToSafeCoordinates(self,obsLocation) -> ():
+    #############################################################################
+    # Method
+    #
+    def slewToSafeCoord(self,obsLocation):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'SlewToSafeCoordinates')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             timeNowUTC = Time.now()
-            writeLog(self.debugLevl,"",self.deviceKind,ptos('timeNowUTC      =',timeNowUTC).strip())
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),ptos('timeNowUTC      =',timeNowUTC).strip())
             mountSafeCoord = AltAz(alt=45*u.deg,az=55*u.deg,obstime=timeNowUTC, location=obsLocation)
             mountSafeCoord = mountSafeCoord.transform_to(ICRS())
             mountSafeCoord = SkyCoord(mountSafeCoord.ra.value, mountSafeCoord.dec.value, frame='icrs', unit='deg')
-            writeLog(self.debugLevl,"",self.deviceKind,ptos('mountSafeCoord  =',mountSafeCoord.to_string('hmsdms')).strip())
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),ptos('mountSafeCoord  =',mountSafeCoord.to_string('hmsdms')).strip())
             self.slewToRaDec(mountSafeCoord.ra.hour,mountSafeCoord.dec.value,False)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in slewToSafeCoordinates"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def slewToRaDec(self,Ra,Dec,asyncMode) -> ():
+    #############################################################################
+    # Method
+    #
+    def slewToRaDec(self,Ra,Dec,asyncMode):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,ptos('Slew Mount ra:%6.2f dec:%6.2f'%(Ra,Dec)).strip())
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "sky6RASCOMTele.Connect();" \
                     + f"sky6RASCOMTele.Asynchronous={js_bool(asyncMode)};" \
                     + "var wasTracking=sky6RASCOMTele.IsTracking;" \
                     + "var oldRaRate=sky6RASCOMTele.dRaTrackingRate;" \
                     + "var oldDecRate=sky6RASCOMTele.dDecTrackingRate;" \
-                    + f'Out=sky6RASCOMTele.SlewToRaDec({Ra},{Dec},"");' \
-                    + "sky6RASCOMTele.SetTracking(wasTracking,1,oldRaRate,oldDecRate);" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                (success, message) = check_for_error_in_return_value(returned_value)
-            writeLog(self.debugLevl,"",self.deviceKind,'Slew completed')
+                    + f'sky6RASCOMTele.SlewToRaDec({Ra},{Dec},"");' \
+                    + "sky6RASCOMTele.SetTracking(wasTracking,1,oldRaRate,oldDecRate);" 
+            skyXcmd(self,command,allowErrors=False)
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Slew completed')
             time.sleep(self.postSlewPause)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in slewToRaDec"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def slewToAltAz(self, alt, az, asyncMode) -> ():
+    #############################################################################
+    # Method
+    #
+    def slewToAltAz(self, alt, az, asyncMode):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,ptos('Slew Mount alt:%6.2f az:%6.2f'%(alt,az)).strip())
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "sky6RASCOMTele.Connect();" \
                     + f"sky6RASCOMTele.Asynchronous={js_bool(asyncMode)};" \
                     + "var wasTracking=sky6RASCOMTele.IsTracking;" \
                     + "var oldRaRate=sky6RASCOMTele.dRaTrackingRate;" \
                     + "var oldDecRate=sky6RASCOMTele.dDecTrackingRate;" \
-                    + f'Out=sky6RASCOMTele.SlewToAzAlt({az},{alt},\"\");' \
-                    + "sky6RASCOMTele.SetTracking(wasTracking,1,oldRaRate,oldDecRate);" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                (success, message) = check_for_error_in_return_value(returned_value)
-            writeLog(self.debugLevl,"",self.deviceKind,'Slew completed')
+                    + f'sky6RASCOMTele.SlewToAzAlt({az},{alt},\"\");' \
+                    + "sky6RASCOMTele.SetTracking(wasTracking,1,oldRaRate,oldDecRate);" 
+            skyXcmd(self,command,allowErrors=False)
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Slew completed')
             time.sleep(self.postSlewPause)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in slewToAltAz"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def isSlewComplete(self) -> (bool):
+    #############################################################################
+    # Method
+    #
+    def isSlewComplete(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Query is Slew Complete')
-            success = True
-            is_complete = False
-            command = ""\
-                    + "Out=sky6RASCOMTele.IsSlewComplete;" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                (success, message) = check_for_error_in_return_value(returned_value)
-                if success:
-                    result_as_int = int(returned_value)
-                    is_complete = result_as_int != 0
-            return is_complete
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
+                    + "Out=sky6RASCOMTele.IsSlewComplete;" 
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            if skyXparts[0] == '0':
+                result = False
+            elif skyXparts[0] == '1':
+                result = True
+            else:
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)                
+            retInfo =  result
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in isSlewComplete"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def abortSlew(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def abortSlew(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'abortSlew')
-            command = ""\
-                    + "Out=sky6RASCOMTele.Abort();" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                (success, message) = check_for_error_in_return_value(returned_value)
-            return
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
+                    + "sky6RASCOMTele.Abort();" 
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in abortSlew"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getRaDec(self) -> (float, float):
+    #############################################################################
+    # Method
+    #
+    def getRaDec(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Query RaDec')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             return_ra: float = 0
             return_dec: float = 0
-            command = ""\
+            command = ''\
                     + "sky6RASCOMTele.GetRaDec();" \
-                    + "var Out=sky6RASCOMTele.dRa + '/' + sky6RASCOMTele.dDec;" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                (success, message) = check_for_error_in_return_value(returned_value)
-            if success:
-                parts = returned_value.split("/")
-                return_ra = float(parts[0])
-                return_dec = float(parts[1])
-                return return_ra, return_dec
+                    + "var Out=sky6RASCOMTele.dRa + '|' + sky6RASCOMTele.dDec;" 
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            return_ra = float(skyXparts[0])
+            return_dec = float(skyXparts[1])
+            retInfo = return_ra, return_dec
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in getRaDec"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getAltAz(self) -> (float, float):
+    #############################################################################
+    # Method
+    #
+    def getAltAz(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Query AltAz')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             return_alt: float = 0
             return_az: float = 0
-            command = ""\
+            command = ''\
                     + "sky6RASCOMTele.GetAzAlt();" \
-                    + "var Out=sky6RASCOMTele.dAlt + '/' + sky6RASCOMTele.dAz;" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                (success, message) = check_for_error_in_return_value(returned_value)
-            if success:
-                parts = returned_value.split("/")
-                return_alt = float(parts[0])
-                return_az = float(parts[1])
-                return return_alt, return_az
+                    + "var Out=sky6RASCOMTele.dAlt + '|' + sky6RASCOMTele.dAz;" 
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            return_alt = float(skyXparts[0])
+            return_az = float(skyXparts[1])
+            retInfo = return_alt, return_az
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in getAltAz"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def setTracking(self, tracking: bool) -> ():
+    #############################################################################
+    # Method
+    #
+    def setTracking(self, tracking: bool):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'Set Tracking to {tracking}')
-            command = ""\
-                    + f"Out=sky6RASCOMTele.SetTracking({1 if tracking else 0},1,0,0);" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                (success, message) = check_for_error_in_return_value(returned_value)
-            return
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
+                    + f"sky6RASCOMTele.SetTracking({1 if tracking else 0},1,0,0);" 
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in setTracking"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def isTracking(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def isTracking(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Query Tracking')
-            command = ""\
-                    + "Out=sky6RASCOMTele.IsTracking();" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                (success, message) = check_for_error_in_return_value(returned_value)
-            writeLog(self.debugLevl,"",self.deviceKind,'Query Parked completed')
-            return message
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
+                    + "Out=sky6RASCOMTele.isTracking();" 
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Query Parked completed')
+            retInfo =  skyXparts[0]
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in isTracking"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-
+    #############################################################################
+    # Method
+    #
     def jog(self,deltaRa,deltaDec):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'jog')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             NorS = "N"
             if(deltaDec<0): NorS = "S"
             EorW = "E"
             if(deltaRa<0): EorW = "W"
-            command = ""\
+            command = ''\
                     + "sky6RASCOMTele.Asynchronous = false;"\
                     + f'sky6RASCOMTele.Jog({abs(deltaDec)}, "{NorS}");'\
                     + f'sky6RASCOMTele.Jog({abs(deltaRa )}, "{EorW}");'
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            writeLog(self.debugLevl,"",self.deviceKind,'jog completed')
-            return
+            skyXcmd(self,command,allowErrors=False)
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'jog completed')
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in jog"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def jogDec(self,deltaDec):
+    #############################################################################
+    # Method
+    #
+    def jogDec(self,deltaDecMin):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'jog')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             NorS = "N"
-            if(deltaDec<0): NorS = "S"
-            command = ""\
+            if(deltaDecMin<0): NorS = "S"
+            command = ''\
                     + "sky6RASCOMTele.Asynchronous = false;"\
-                    + f'sky6RASCOMTele.Jog({abs(deltaDec)}, "{NorS}");'
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            writeLog(self.debugLevl,"",self.deviceKind,'jog completed')
-            return
+                    + f'sky6RASCOMTele.Jog({abs(deltaDecMin)}, "{NorS}");'
+            skyXcmd(self,command,allowErrors=False)
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'jog completed')
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in jog"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def jogRa(self,deltaRa):
+    #############################################################################
+    # Method
+    #
+    def jogRa(self,deltaRaMin):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'jog')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             EorW = "E"
-            if(deltaRa<0): EorW = "W"
-            command = ""\
+            if(deltaRaMin<0): EorW = "W"
+            command = ''\
                     + "sky6RASCOMTele.Asynchronous = false;"\
-                    + f'sky6RASCOMTele.Jog({abs(deltaRa )}, "{EorW}");'
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            writeLog(self.debugLevl,"",self.deviceKind,'jog completed')
-            return
+                    + f'sky6RASCOMTele.Jog({abs(deltaRaMin)}, "{EorW}");'
+            skyXcmd(self,command,allowErrors=False)
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'jog completed')
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in jog"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def loadPointingDataSet(self,path,file):
+        try:
+            writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(),'Enter method')
+            self.pointingDataSet = pd.read_excel(path + file,sheet_name='pointingSheet')
+            if False and (self.pointingDataSet.shape[0]==0):
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def savePointingDataSet(self,path,file):
+        try:
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            with pd.ExcelWriter(path + file) as writer:  
+                    self.pointingDataSet.to_excel(writer, index = False, sheet_name='pointingSheet') 
+            if 1==0:
+                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
 
 #############################################################################
 #
@@ -2151,104 +3316,156 @@ class Mount:
 class MainFilter:
     def __init__(self):
         self.deviceKind = 'mainFilter'
-        self.paceDelay = 1
-        self.debugLevl = False
-        self.debugCommLevel = False
         #self.filterNdx={'R':0,'G':1,'B':2,'C':3,'L':4,'SII':5,'OIII':6,'Ha':7}
         #self.filterName=['R','G','B','C','L','SII','OIII','Ha']
 
-    def setDebugLevel(self,debugLevl) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugLevl to '+str(debugLevl))
-        self.debugLevl = debugLevl
-        return
-
-    def setDebugCommLevel(self,debugCommLevel) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugCommLevel to '+str(debugCommLevel))
-        self.debugCommLevel = debugCommLevel
-        return
-
-    def connect(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def connect(self):
         if not self.kind == 'OSC':
             try:
-                writeLog(self.debugLevl,"",self.deviceKind,'Connect')
+                writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
                 command = "ccdsoftCamera.filterWheelConnect();"
-                (success, message) = skyXsendCndWithNoReturn(self,command)
-                if 0:
-                    ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                    writeLog(True,"",self.deviceKind,ExcMsg)
-                    raise Exception(ExcMsg)
-                return
+                skyXcmd(self,command,allowErrors=False)
+                retInfo = True
+                return retInfo
             except:
-                ExcMsg="Exception in " + self.deviceKind + " unexpected error in connect"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+                ex_type, ex_value, ex_traceback = sys.exc_info()
+                trace_back = traceback.extract_tb(ex_traceback)
+                stack_trace = list()
+                for trace in trace_back:
+                    stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+                writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+                writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+                writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
                 raise Exception(ExcMsg)
 
-    def disconnect(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def disconnect(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'disconnect')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             command = "ccdsoftCamera.filterWheelDisconnect();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in disconnect"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getNumbFilters(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def getNumbFilters(self):
+        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
         if not self.kind == 'OSC':
-            command = ""\
+            command = ''\
                     + "var temp=ccdsoftCamera.lNumberFilters;" \
                     + "var Out;" \
-                    + "Out=temp+\"\\n\";"
-            (success, result, message) = skyXsendCndWithReturn(self,command)
-            self.numbFilters= int(result)
-            #print(self.numbFilters)
+                    + "Out=temp;"
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            self.numbFilters= int(skyXparts[0])
         else:
-            self.numbFilters= 0
-        return
-        
-    def getFilterNames(self) -> ():
+            self.numbFilters= 1
+        retInfo = True
+        return retInfo
+
+    #############################################################################
+    # Method
+    #
+    def getFilterNames(self):
+        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+        self.filterDictFwd =	{}
+        self.filterDictRev =	{}
         if not self.kind == 'OSC':
-            self.filterDictFwd =	{}
-            self.filterDictRev =	{}
             for ndx in range(self.numbFilters):
-                command = ""\
+                command = ''\
                         + f"var temp=ccdsoftCamera.szFilterName({ndx});" \
                         + "var Out;" \
-                        + "Out=temp+\"\\n\";"
-                (success, result, message) = skyXsendCndWithReturn(self,command)
-                self.filterDictFwd[ndx] = result
-                self.filterDictRev[result] = ndx
-                #print(self.filterDictRev)
+                        + "Out=temp;"
+                skyXresult = skyXcmd(self,command,allowErrors=True)
+                skyXparts = skyXresult.split("|")
+                self.filterDictFwd[ndx] = skyXparts[0]
+                self.filterDictRev[skyXparts[0]] = ndx
         else:
-            self.filterDictFwd =	{}
-            self.filterDictRev =	{}
-        return
-        
-    def setFilterByNdx(self, filterNdx) -> ():
+            self.filterDictFwd[0] =	'OSC'
+            self.filterDictRev['OSC'] =	0
+        retInfo = True
+        return retInfo
+
+    #############################################################################
+    # Method
+    #
+    def setFilterByNdx(self, filterNdx):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'set filter to {filterNdx}')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             self._selected_filterNdx = filterNdx
             command = f"ccdsoftCamera.FilterIndexZeroBased={filterNdx};"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            if not (int(skyXparts[0]) == filterNdx):
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in setFilter"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
-            
-    def setFilterByName(self, filterName) -> ():
+
+    #############################################################################
+    # Method
+    #
+    def setFilterByName(self, filterName):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'set filter to {filterName}')
-            filterNdx = self.filterDictRev[filterName]
-            self._selected_filterName = filterName
-            self._selected_filterNdx = filterNdx
-            command = f"ccdsoftCamera.FilterIndexZeroBased={filterNdx};"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            if not self.kind == 'OSC':
+                filterNdx = self.filterDictRev[filterName]
+                self._selected_filterName = filterName
+                self._selected_filterNdx = filterNdx
+                command = f"ccdsoftCamera.FilterIndexZeroBased={filterNdx};"
+                skyXresult = skyXcmd(self,command,allowErrors=True)
+                skyXparts = skyXresult.split("|")
+                if not (int(skyXparts[0]) == filterNdx):
+                    ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                    writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+                    raise Exception(ExcMsg)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in setFilter"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
 #############################################################################
@@ -2258,335 +3475,476 @@ class MainFilter:
 class MainCamera:
     def __init__(self):
         self.deviceKind = 'mainCamera'
-        self.paceDelay = 1
-        self.debugLevl = False
-        self.debugCommLevel = False
         self.tempTollerance = 0.5
         self.tempProbeTimerSec = 10
 
-
-    def setDebugLevel(self,debugLevl) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugLevl to '+str(debugLevl))
-        self.debugLevl = debugLevl
-        return
-
-    def setDebugCommLevel(self,debugCommLevel) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugCommLevel to '+str(debugCommLevel))
-        self.debugCommLevel = debugCommLevel
-        return
-
-    def connect(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def connect(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Connect')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             command = "ccdsoftCamera.Connect();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            if 0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
-                raise Exception(ExcMsg)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in connect"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def disconnect(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def disconnect(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'disconnect')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             command = "ccdsoftCamera.Disconnect();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in disconnect"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def setTempSetPoint(self,cooling_on, target_temperature, waitForTemp) -> ():
+    #############################################################################
+    # Method
+    #
+    def setTempSetPoint(self,cooling_on, target_temperature, waitForTemp, waitTimeMin):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'setTempSetPoint to {target_temperature}C')
-            target_temperature_command = ""
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            target_temperature_command = ''
             if cooling_on:
                 target_temperature_command = f"ccdsoftCamera.TemperatureSetPoint={target_temperature};"
-            command = ""\
+            command = ''\
                     + f"{target_temperature_command}" \
                     + f"ccdsoftCamera.RegulateTemperature={js_bool(cooling_on)};" \
                     + "ccdsoftCamera.ShutDownTemperatureRegulationOnDisconnect=" \
                     + f"{js_bool(False)};"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
+            skyXcmd(self,command,allowErrors=False)
             if not(self.getTempSetPoint()==target_temperature):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
             if waitForTemp:
                 coolerTemp = self.getTemp()
                 accumulatedTime=0
                 while abs(target_temperature - coolerTemp) > self.tempTollerance:
-                    writeLog(self.debugLevl,"",self.deviceKind,f'sleeping {self.tempProbeTimerSec} Sec')
+                    writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'sleeping {self.tempProbeTimerSec:.1f} seconds')
                     time.sleep(self.tempProbeTimerSec)
                     accumulatedTime=accumulatedTime+self.tempProbeTimerSec
                     coolerTemp = self.getTemp()
-                    coolerPower = self.getCoolerPower()
-                    if (coolerPower>90):
-                        ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                        writeLog(True,"",self.deviceKind,ExcMsg)
+                    #coolerPower = self.getCoolerPower()
+                    # if (coolerPower>90):
+                    #     ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                    #     writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+                    #     raise Exception(ExcMsg)
+                    if (accumulatedTime>waitTimeMin*60):
+                        ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                        writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                         raise Exception(ExcMsg)
-                    if (accumulatedTime>3*60):
-                        ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                        writeLog(True,"",self.deviceKind,ExcMsg)
-                        raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in setTempSetPoint"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getTemp(self) -> (float):
+    #############################################################################
+    # Method
+    #
+    def getTemp(self):
         try:
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "var temp=ccdsoftCamera.Temperature;" \
                     + "var Out;" \
-                    + "Out=temp+\"\\n\";"
+                    + "Out=temp;"
             temperature = 0
-            (success, temperature_result, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                temperature = Validators.valid_float_in_range(temperature_result, -270, +200)
-                if not(temperature is None):
-                    writeLog(self.debugLevl,"",self.deviceKind,f'GetTemp = {temperature}C')
-                    return temperature
-            if 0:
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
-                raise Exception(ExcMsg)
-                return
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            temperature = float(skyXparts[0])
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'GetTemp = {temperature:.1f}C')
+            retInfo =  temperature
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in getTemp"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getTempSetPoint(self) -> (float):
+    #############################################################################
+    # Method
+    #
+    def getTempSetPoint(self):
         try:
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "var temp=ccdsoftCamera.TemperatureSetPoint;" \
                     + "var Out;" \
-                    + "Out=temp+\"\\n\";"
-            temperature = 0
-            (success, temperature_result, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                temperature = Validators.valid_float_in_range(temperature_result, -270, +200)
-                if temperature is None:
-                    success = False
-                    temperature = 0
-                    #message = "Invalid Temperature Returned"
-            writeLog(self.debugLevl,"",self.deviceKind,f'GetTemp = {temperature}C')
-            return temperature
+                    + "Out=temp;"
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            temperature = float(skyXparts[0])
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'GetTemp = {temperature:.1f}C')
+            retInfo =  temperature
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in getTempSetPoint"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getCoolerPower(self) -> (float):
+    #############################################################################
+    # Method
+    #
+    def getCoolerPower(self):
         try:
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "var power=ccdsoftCamera.ThermalElectricCoolerPower;" \
                     + "var Out;" \
-                    + "Out=power+\"\\n\";"
-            (success, coolerPower, message) = skyXsendCndWithReturn(self,command)
-            writeLog(self.debugLevl,"",self.deviceKind,f'GetCoolerPower = {coolerPower}%')
-            return float(coolerPower)
+                    + "Out=power;"
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            coolerPower =  float(skyXparts[0])
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'GetCoolerPower = {coolerPower:.1f}%')
+            retInfo = coolerPower
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in getCoolerPower"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getAutosavePath(self) -> (str):
+    #############################################################################
+    # Method
+    #
+    def getAutosavePath(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'GetAutosavePath')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "var path=ccdsoftCamera.AutoSavePath;" \
                     + "var Out;" \
-                    + "Out=path+\"\\n\";"
-            (success, autoSavepath, message) = skyXsendCndWithReturn(self,command)
-            writeLog(self.debugLevl,"",self.deviceKind,f'autoSavepath = >{autoSavepath}<')
-            return autoSavepath
+                    + "Out=path;"
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'autoSavepath = >{skyXparts[0]}<')
+            retInfo =  skyXparts[0]
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in getAutosavePath"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-
-    def abortImage(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def abortImage(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'abortImage')
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
             command = "ccdsoftCamera.Abort();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in abortImage"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    # def saveImageToAutosave(self,objName:str,frameType: str,filter_name: str,exposure: float,binning: int,sequence: int) -> ():
-    #     writeLog(self.debugLevl,"",self.deviceKind,'saveImageToAutosave')
+    # def saveImageToAutosave(self,objName:str,frameType: str,filter_name: str,exposure: float,binning: int,sequence: int):
+    #     writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'saveImageToAutosave')
     #     saveFileName = generateSaveFileName(frameType,temp,objName,filterName,exposure,binning,sequence)
-    #     #writeLog(self.debugLevl,"",self.deviceKind,f'saveFileName = >{saveFileName}<')
-    #     command = ""\
+    #     #writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'saveFileName = >{saveFileName}<')
+    #     command = ''\
     #             + "cam = ccdsoftCamera;" \
     #             + "img = ccdsoftCameraImage;" \
     #             + "img.AttachToActiveImager();" \
     #             + "var path = ccdsoftCamera.AutoSavePath;" \
     #             + f'img.Path = path + "/" + "{saveFileName}";' \
-    #             + "var Out=img.Save();" \
-    #             + "Out += \"\\n\";"
-    #     (success, returned_value, message) = skyXsendCndWithReturn(self,command)
+    #             + "var Out=img.Save();" 
+    #     skyXresult = skyXcmd(self,command,allowErrors=True)
     #     return
 
-    def saveImgToFile(self,directoryPath,frameType,temp,objName,filterName,exposure,binning,sequence) -> ():
+    #############################################################################
+    # Method
+    #
+    def saveImgToFile(self,directoryPath,frameType,temp,objName,filterName,exposure,binning,sequence):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'saveImgToFile')
-
             if not os.path.exists(directoryPath):
-                writeLog(self.debugLevl,"",self.deviceKind,f'Making Folder {directoryPath}')
+                writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'Making Folder {directoryPath}')
                 os.makedirs(directoryPath)
 
-
             saveFileName = generateSaveFileName(frameType,temp,objName,filterName,exposure,binning,sequence)
-            #writeLog(self.debugLevl,"",self.deviceKind,f'saveFileName = >{saveFileName}<')
+            writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(),f'Save {saveFileName}')
 
-            command = ""\
+            command = ''\
                     + "cam = ccdsoftCamera;" \
                     + "img = ccdsoftCameraImage;" \
                     + "img.AttachToActiveImager();" \
                     + f'var path = "{directoryPath}";' \
                     + f'img.Path = path + "/" + "{saveFileName}";' \
-                    + "var Out=img.Save();" \
-                    + "Out += \"\\n\";"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
+                    + "img.Save();" 
+            skyXcmd(self,command,allowErrors=False)
             if not os.path.exists(directoryPath+'/'+saveFileName):
-                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
             self.lastSaveFilePath = directoryPath
             self.lastFileName = saveFileName
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in saveImgToFile"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def takeBiasFrame(self, binning: int, autoSaveFile: bool, asyncMode: bool) -> ():
+    #############################################################################
+    # Method
+    #
+    def takeImage(self,frameType, exposure, binning, reductionKind, reductionGrp, autoSaveFile, asyncMode):
+        writeLog(True,'',self.deviceKind,currentFuncName(),f'take{frameType}Frame {exposure:.1f}Sec {binning:.1f}x{binning:.1f} autoSaveFile={js_bool(autoSaveFile)}, asyncMode={js_bool(asyncMode)}')
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'takeBiasFrame {binning}x{binning} autoSaveFile={js_bool(autoSaveFile)}, asyncMode={js_bool(asyncMode)}')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            self.frameTypeDict={}
+            self.frameTypeDict['Light']=1
+            self.frameTypeDict['Bias']=2
+            self.frameTypeDict['Dark']=3
+            self.frameTypeDict['Flat']=4
+            
+            self.frameReductionDict={}
+            self.frameReductionDict['No']=0
+            self.frameReductionDict['None']=0
+            self.frameReductionDict['Full']=2
+
+            frameTypeNdx = self.frameTypeDict[frameType]
+            reductionNdx = self.frameReductionDict[reductionKind]
+
+            command = ''\
                     + "ccdsoftCamera.Autoguider=false;" \
                     + f"ccdsoftCamera.Asynchronous={js_bool(asyncMode)};" \
                     + f"ccdsoftCamera.AutoSaveOn={js_bool(autoSaveFile)};" \
-                    + "ccdsoftCamera.ImageReduction=0;" \
+                    + f"ccdsoftCamera.ImageReduction={reductionNdx};" \
+                    + f'ccdsoftCamera.ReductionGroupName="{reductionGrp}";' \
                     + "ccdsoftCamera.ToNewWindow=false;" \
                     + "ccdsoftCamera.ccdsoftAutoSaveAs=0;" \
-                    + "ccdsoftCamera.Frame=2;" \
-                    + f"ccdsoftCamera.ExposureTime = {0};" \
+                    + f"ccdsoftCamera.Frame={frameTypeNdx};" \
+                    + f"ccdsoftCamera.ExposureTime = {exposure};" \
                     + f"ccdsoftCamera.BinX={binning};" \
                     + f"ccdsoftCamera.BinY={binning};" \
                     + "var cameraResult = ccdsoftCamera.TakeImage();"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                return_parts = returned_value.split("|")
-                assert (len(return_parts) > 0)
-                if return_parts[0] == "0":
-                    pass  # Result indicates success
-                else:
-                    success = False
-            return
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            assert (len(skyXparts) > 0)
+            if skyXparts[0] == "0":
+                pass  # Result indicates success
+            else:
+                pass
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in takeBiasFrame"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def takeDarkFrame(self, ExposureTime: float, binning: int, autoSaveFile: bool, asyncMode: bool) -> ():
+    #############################################################################
+    # Method
+    #
+    def isComplete(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'takeDarkFrame {ExposureTime}Sec {binning}x{binning} autoSaveFile={js_bool(autoSaveFile)}, asyncMode={js_bool(asyncMode)}')
-            command = ""\
-                    + "ccdsoftCamera.Autoguider=false;" \
-                    + f"ccdsoftCamera.Asynchronous={js_bool(asyncMode)};" \
-                    + f"ccdsoftCamera.AutoSaveOn={js_bool(autoSaveFile)};" \
-                    + "ccdsoftCamera.ImageReduction=0;" \
-                    + "ccdsoftCamera.ToNewWindow=false;" \
-                    + "ccdsoftCamera.ccdsoftAutoSaveAs=0;" \
-                    + "ccdsoftCamera.Frame=3;" \
-                    + f"ccdsoftCamera.ExposureTime = {ExposureTime};" \
-                    + f"ccdsoftCamera.BinX={binning};" \
-                    + f"ccdsoftCamera.BinY={binning};" \
-                    + "var cameraResult = ccdsoftCamera.TakeImage();"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                return_parts = returned_value.split("|")
-                assert (len(return_parts) > 0)
-                if return_parts[0] == "0":
-                    pass  # Result indicates success
-                else:
-                    success = False
-            return
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
+                    +'ccdsoftCamera.IsExposureComplete;'
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+
+            if skyXparts[0] == '0':
+                retInfo = False
+            elif skyXparts[0] == '1':
+                retInfo = True
+            else:
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)                
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in takeDarkFrame"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def takeFlatFrame(self, ExposureTime: float, binning: int, autoSaveFile: bool, asyncMode: bool) -> ():
+    def getExpStatus(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'takeFlatFrame {ExposureTime}Sec {binning}x{binning} autoSaveFile={js_bool(autoSaveFile)}, asyncMode={js_bool(asyncMode)}')
-            command = ""\
-                    + "ccdsoftCamera.Autoguider=false;" \
-                    + f"ccdsoftCamera.Asynchronous={js_bool(asyncMode)};" \
-                    + f"ccdsoftCamera.AutoSaveOn={js_bool(autoSaveFile)};" \
-                    + "ccdsoftCamera.ImageReduction=0;" \
-                    + "ccdsoftCamera.ToNewWindow=false;" \
-                    + "ccdsoftCamera.ccdsoftAutoSaveAs=0;" \
-                    + "ccdsoftCamera.Frame=4;" \
-                    + f"ccdsoftCamera.ExposureTime = {ExposureTime};" \
-                    + f"ccdsoftCamera.BinX={binning};" \
-                    + f"ccdsoftCamera.BinY={binning};" \
-                    + "var cameraResult = ccdsoftCamera.TakeImage();"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                return_parts = returned_value.split("|")
-                assert (len(return_parts) > 0)
-                if return_parts[0] == "1":
-                    pass  # Result indicates success
-                else:
-                    success = False
-            return
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
+                    +'ccdsoftCamera.ExposureStatus;'
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            retInfo = skyXparts[0]
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in takeFlatFrame"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def takeLightFrame(self, ExposureTime: float, binning: int, imageReduction: int, autoSaveFile: bool, asyncMode: bool) -> ():
+    #############################################################################
+    # Method
+    #
+    def getImgAvgADU(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'takeLightFrame {ExposureTime}Sec {binning}x{binning} autoSaveFile={js_bool(autoSaveFile)}, asyncMode={js_bool(asyncMode)}')
-            command = ""\
-                    + "ccdsoftCamera.Autoguider=false;" \
-                    + f"ccdsoftCamera.Asynchronous={js_bool(asyncMode)};" \
-                    + f"ccdsoftCamera.AutoSaveOn={js_bool(autoSaveFile)};" \
-                    + f"ccdsoftCamera.ImageReduction={imageReduction};" \
-                    + "ccdsoftCamera.ToNewWindow=false;" \
-                    + "ccdsoftCamera.ccdsoftAutoSaveAs=0;" \
-                    + "ccdsoftCamera.Frame=1;" \
-                    + f"ccdsoftCamera.ExposureTime = {ExposureTime};" \
-                    + f"ccdsoftCamera.BinX={binning};" \
-                    + f"ccdsoftCamera.BinY={binning};" \
-                    + "var cameraResult = ccdsoftCamera.TakeImage();"
-            (success, returned_value, message) = skyXsendCndWithReturn(self,command)
-            if success:
-                return_parts = returned_value.split("|")
-                assert (len(return_parts) > 0)
-                if return_parts[0] == "1":
-                    pass  # Result indicates success
-                else:
-                    success = False
-            return
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
+                    +'ccdsoftCameraImage.AttachToActive();'\
+                    +'var averageAdu = ccdsoftCameraImage.averagePixelValue();'\
+                    +'var Out;'\
+                    +'Out=averageAdu;'
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            retInfo =  skyXparts[0]
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in takeLightFrame"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def getInventory(self):
+        try:
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
+                    +"var CSAGI=ccdsoftCameraImage;"\
+                    +"CSAGI.AttachToActiveImager();"\
+                    +"CSAGI.ShowInventory();"\
+                    +"var FWHM=CSAGI.InventoryArray(4);"\
+                    +"var counter=FWHM.length;"\
+                    +"var path=CSAGI.Path;"\
+                    +"var fwhm=FWHM[0];"\
+                    +'var Out="";'\
+                    +'Out+=counter+"|";'\
+                    +'Out+=fwhm+"|";'\
+                    +'Out+=path;'\
+                    +'Out+="";'
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            retInfo = {}
+            retInfo['count'] = int(skyXparts[0])
+            retInfo['FWHM'] = float(skyXparts[1])
+            retInfo['path'] = skyXparts[2]
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
 #############################################################################
@@ -2596,55 +3954,72 @@ class MainCamera:
 class Guider:
     def __init__(self):
         self.deviceKind = 'Guider'
-        self.paceDelay = 1
-        self.debugLevl = False
-        self.debugCommLevel = False
         self.postSlewPause = 2
 
-    def setDebugLevel(self,debugLevl) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugLevl to '+str(debugLevl))
-        self.debugLevl = debugLevl
-        return
-
-    def setDebugCommLevel(self,debugCommLevel) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugCommLevel to '+str(debugCommLevel))
-        self.debugCommLevel = debugCommLevel
-        return
-
-    def connect(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def connect(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Connect')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "ccdsoftAutoguider.Connect();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in connect"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def disconnect(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def disconnect(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Disconnect')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "ccdsoftAutoguider.Disconnect();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in disconnect"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def setExposure(self,exp) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting exposure to '+str(exp))
+    #############################################################################
+    # Method
+    #
+    def setExposure(self,exp):
+        writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
         self.exp = exp
-        return
+        retInfo = True
+        return retInfo
 
-
-    def takeImage(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def takeImage(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'takeImage')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
             +"ccdsoftAutoguider.Asynchronous = false;"\
             +"ccdsoftAutoguider.Frame = 1;"\
             +"ccdsoftAutoguider.Delay = 0;"\
@@ -2652,18 +4027,29 @@ class Guider:
             +"ccdsoftAutoguider.ExposureTime = " + str(self.exp) + ";"  \
             +"ccdsoftAutoguider.AutoSaveOn = true;"\
             +"ccdsoftAutoguider.TakeImage();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in takeImage"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-
-    def findStar(self ) -> ():
+    #############################################################################
+    # Method
+    #
+    def findStar(self ):
        try:
-            writeLog(self.debugLevl,"",self.deviceKind,'findStar')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
             +"function median(values){values.sort(function(a,b){return a - b;});"\
                 +"var half=Math.floor(values.length/2);"\
                 +"if(values.length%2){return values[half];}"\
@@ -2749,22 +4135,37 @@ class Guider:
             +"strResult+='MedFWHM='+medFWHM+',';"\
             +"strResult+='TtlLgtSrcs='+counter+';';"\
             +"strResult+='Path='+path;"
-            (success, returned_result, message) = skyXsendCndWithReturn(self,command)
-            #print(returned_result)
-            data2 = returned_result.split("|")
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            #print(result)
+            skyXparts = skyXresult.split("|")
             #print(data2[0],data2[1])
-            self.starX = data2[0]
-            self.starY = data2[1]
-            return
+            self.starX = skyXparts[0]
+            self.starY = skyXparts[1]
+            if not (self.starY=='0.00') and not(self.starY=='0.00'):
+                retInfo = True
+            else:
+                retInfo = False
+            return retInfo
        except:
-           ExcMsg="Exception in " + self.deviceKind + " unexpected error in findStar"
-           writeLog(True,"",self.deviceKind,ExcMsg)
-           raise Exception(ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
 
-    def start(self ) -> ():
+    #############################################################################
+    # Method
+    #
+    def start(self ):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Start')
-            command = "" \
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = '' \
             +"ccdsoftAutoguider.GuideStarX = " + str(self.starX) + ";"\
             +"ccdsoftAutoguider.GuideStarY = " + str(self.starY) + ";"\
             +"ccdsoftAutoguider.AutoguiderExposureTime = " + str(self.exp) + ";"\
@@ -2774,44 +4175,82 @@ class Guider:
             +"ccdsoftAutoguider.Frame = 1;"\
             +"ccdsoftAutoguider.Asynchronous = true;"\
             +"ccdsoftAutoguider.Autoguide();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            writeLog(self.debugLevl,"",self.deviceKind,'Wait 3 sec for guider to settle')
+            skyXcmd(self,command,allowErrors=False)
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Wait 3 seconds for guider to settle')
             time.sleep(3)
-            return
+            #############################################################################
+            # FEATURE ADD:
+            #   * Measure a good start
+            #
+            if True:
+                retInfo = True
+            else:
+                retInfo = False
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in Start"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
-        (success, message) = skyXsendCndWithNoReturn(self,command)
-        return
 
-    def stop(self ) -> ():
+    #############################################################################
+    # Method
+    #
+    def stop(self ):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Stop')
-            command = "" \
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = '' \
             +"ccdsoftAutoguider.Abort();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in Stop"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getError(self ) -> (float,float):
+    #############################################################################
+    # Method
+    #
+    def getError(self ):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'getError')
-            command = "" \
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = '' \
             +"var errorX = ccdsoftAutoguider.GuideErrorX;"\
             +"var errorY = ccdsoftAutoguider.GuideErrorY;"\
             +"Out = errorX + '|' + errorY;"
-            (success,returned_result, message) = skyXsendCndWithReturn(self,command)
-            #print(returned_result)
-            data2 = returned_result.split("|")
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            #print(result)
+            skyXparts = skyXresult.split("|")
             #print(data2[0],data2[1])
-            return data2[0],data2[1]
+            retInfo =  skyXparts[0],skyXparts[1]
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in getError"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
 #############################################################################
@@ -2821,181 +4260,381 @@ class Guider:
 class Focuser:
     def __init__(self):
         self.deviceKind = 'Focuser'
-        self.paceDelay = 1
-        self.debugLevl = False
-        self.debugCommLevel = False
         self.postSlewPause = 2
-        self.stepInt = 4000
-        self.stepSlope = 0
 
+    #############################################################################
+    # Method
+    #
+    def setTempCurve(self):
+        p=numpy.polyfit(self.mainFocuserDataSet['Temperature'].values, self.mainFocuserDataSet['Step'].values, 1)
+        self.p=p
+        writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(),f'Intercept={p[1]:.1f} slope={p[0]:.1f}')
+        retInfo = True
+        return retInfo
 
-    def setDebugLevel(self,debugLevl) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugLevl to '+str(debugLevl))
-        self.debugLevl = debugLevl
-        return
-
-    def setDebugCommLevel(self,debugCommLevel) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,'Setting debugCommLevel to '+str(debugCommLevel))
-        self.debugCommLevel = debugCommLevel
-        return
-
-    def setTempCurve(self,stepInt,stepSlope) -> ():
-        writeLog(self.debugLevl,"",self.deviceKind,f'Setting setTempCurve to {stepInt} {stepSlope}step/C')
-        self.stepInt = stepInt
-        self.stepSlope = stepSlope
-        return
-
-    def connect(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def connect(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'Connect')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "ccdsoftCamera.focConnect();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in connect"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def disconnect(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def disconnect(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'disconnect')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "ccdsoftCamera.focDisconnect();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in connect"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-
-    def getTemp(self) -> (float):
+    #############################################################################
+    # Method
+    #
+    def getTemp(self):
         try:
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "focTemp = ccdsoftCamera.focTemperature;" \
                     + "var Out;" \
-                    + "Out=focTemp+\"\\n\";"
-            (success, focTemp, message) = skyXsendCndWithReturn(self,command)
-            writeLog(self.debugLevl,"",self.deviceKind,f'GetTemp {float(focTemp)}C')
-            return float(focTemp)
+                    + "Out=focTemp;"
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")            
+            focTemp = float(skyXparts[0])
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'GetTemp {focTemp:.1f}C')
+            retInfo = focTemp
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in getTemp"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def getPosition(self) -> (int):
+    #############################################################################
+    # Method
+    #
+    def getPosition(self):
         try:
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "focPos = ccdsoftCamera.focPosition;" \
                     + "var Out;" \
-                    + "Out=focPos+\"\\n\";"
-            (success, focPos, message) = skyXsendCndWithReturn(self,command)
-            writeLog(self.debugLevl,"",self.deviceKind,f'GetPosition {int(focPos)}')
-            return int(focPos)
+                    + "Out=focPos;"
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'GetPosition {int(skyXparts[0]):.1f}')
+            retInfo =  int(skyXparts[0])
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in getPosition"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def moveIn(self,steps) -> ():
+    #############################################################################
+    # Method
+    #
+    def move(self,steps):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'MoveIn')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            retInfo=True
+            if steps>0:
+                retInfo = self.moveOut(steps)
+            if steps<0:
+                retInfo = self.moveIn(-steps)
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def moveIn(self,steps):
+        try:
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
+                    + "ccdsoftCamera.Asynchronous=false;"\
                     + f"ccdsoftCamera.focMoveIn({steps});"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in moveIn"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def moveOut(self,steps) -> ():
+    #############################################################################
+    # Method
+    #
+    def moveOut(self,steps):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'MoveOut')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
+                    + "ccdsoftCamera.Asynchronous=false;"\
                     + f"ccdsoftCamera.focMoveOut({steps});"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in moveOut"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def moveTo(self,step) -> ():
+    #############################################################################
+    # Method
+    #
+    def moveTo(self,step):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,f'MoveTo {step}')
             if (-1<step) and (step<self.positionMax) :
                 isAt = self.getPosition()
                 delta = int(step - isAt)
                 if delta > 0:
+                    writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(),f'Move out {delta:.1f} from {isAt:.1f} to {step:.1f}')
                     self.moveOut(delta)
                 elif delta < 0:
-                    self.moveIn(delta)
+                    writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(),f'Move in {-delta:.1f} from {isAt:.1f} to {step:.1f}')
+                    self.moveIn(-delta)
                 else:
-                    writeLog(self.debugLevl,"",self.deviceKind,'no move required')
+                    writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(),f'No move required from {isAt:.1f}')
             else:
-                ExcMsg="Exception in " + self.deviceKind + " out of range"
-                writeLog(True,"",self.deviceKind,ExcMsg)
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
                 raise Exception(ExcMsg)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in moveTo"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def focus2(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def focus2(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'focus2')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "ccdsoftCamera.ImageReduction=0;" \
                     + "ccdsoftCamera.BinX=1;" \
                     + "ccdsoftCamera.BinY=1;" \
+                    + "ccdsoftCamera.Asynchronous=false;"\
                     + "ccdsoftCamera.AtFocus2();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            writeLog(self.debugLevl,"",self.deviceKind,f'{self.getTemp()},{self.getPosition()}')
-
-            return
+            skyXresult = skyXcmd(self,command,allowErrors=True)
+            skyXparts = skyXresult.split("|")
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),f'skyXparts[0]={skyXparts[0]}')
+            if(skyXparts[0] == 'TypeError: @Focus diverged.  Error = 7001.|No error. Error = 0.'):
+                writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Focus failed')
+                retInfo = False
+            else:              
+                writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(),f'Focus passed {self.getTemp():.1f},{self.getPosition():.1f}')
+                retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in focus2"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def focus3(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def focus3(self):
         try:
-            writeLog(self.debugLevl,"",self.deviceKind,'focus2')
-            command = ""\
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            command = ''\
                     + "ccdsoftCamera.ImageReduction=0;" \
                     + "ccdsoftCamera.BinX=1;" \
                     + "ccdsoftCamera.BinY=1;" \
+                    + "ccdsoftCamera.Asynchronous=false;"\
                     + "ccdsoftCamera.AtFocus3();"
-            (success, message) = skyXsendCndWithNoReturn(self,command)
-            return
+            skyXcmd(self,command,allowErrors=False)
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in focus3"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
 
-    def moveToTempCurve(self) -> ():
+    #############################################################################
+    # Method
+    #
+    def loadFocuserDataSet(self,path,file):
+        try:
+            writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(),'Enter method')
+            self.mainFocuserDataSet = pd.read_excel(path + file,sheet_name='focuserSheet')
+            if self.mainFocuserDataSet.shape[0]==0:
+                ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def saveFocuserDataSet(self,path,file):
+        try:
+            writeLog(self.verboseLevel>1,'',self.deviceKind,currentFuncName(),'Enter method')
+            with pd.ExcelWriter(path + file) as writer:  
+                    self.mainFocuserDataSet.to_excel(writer, index = False, sheet_name='focuserSheet') 
+            if 1==0:
+                ExcMsg="Exception in " + self.deviceKind + " what was expected did not happen"
+                writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+                raise Exception(ExcMsg)
+            retInfo = True
+            return retInfo
+        except:
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
+            raise Exception(ExcMsg)
+
+    #############################################################################
+    # Method
+    #
+    def moveToTempCurve(self):
         try:
             temp = self.getTemp()
-            step = int(self.stepInt+self.stepSlope*temp)
-            writeLog(self.debugLevl,"",self.deviceKind,f'moveToTempLine {step} at {temp}C')
+            step = int(self.p[1]+self.p[0]*temp)
+            writeLog(self.verboseLevel>0,'',self.deviceKind,currentFuncName(),f'Curve({temp:.1f}C) = {step:.1f} ')
             self.moveTo(step)
-            return
+            retInfo = True
+            return retInfo
         except:
-            ExcMsg="Exception in " + self.deviceKind + " unexpected error in moveToTempCurve"
-            writeLog(True,"",self.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + self.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',self.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',self.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
-
-
-
 
 #############################################################################
 #
 # Helpers
 #
 
+#############################################################################
+# Method
+#
 def deltaTimeTohms(timedelta):
     # arbitrary number of seconds
     s = timedelta.sec
@@ -3010,6 +4649,9 @@ def deltaTimeTohms(timedelta):
     # total time
     return ptos('{:02}:{:02}:{:02}'.format(int(hours), int(minutes), int(seconds))).strip()
 
+#############################################################################
+# Method
+#
 def ptos(*args, **kwargs):
     output = io.StringIO()
     print(*args, file=output, **kwargs)
@@ -3017,127 +4659,112 @@ def ptos(*args, **kwargs):
     output.close()
     return contents
 
+#############################################################################
+# Method
+#
 def serialSend(foo,cmd):
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'Sending command '+cmd)
-    time.sleep(foo.paceDelay)
+    writeLog(foo.debugCommLevel,'',foo.deviceKind,currentFuncName(),'Sending command '+cmd)
+    time.sleep(foo.serialPortPaceDelay)
     foo.serPort.write(bytes(cmd+'\n','utf8'))
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'    SENT Command  : >'+cmd+'<')
-    time.sleep(foo.paceDelay)
+    writeLog(foo.debugCommLevel,'',foo.deviceKind,currentFuncName(),'    SENT : >'+cmd+'<')
+    time.sleep(foo.serialPortPaceDelay)
     foo.responce=foo.serPort.readline().decode('utf8').strip()
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'    RXED Response : >'+foo.responce+'<')
-    time.sleep(foo.paceDelay)
+    writeLog(foo.debugCommLevel,'',foo.deviceKind,currentFuncName(),'    RXED : >'+foo.responce+'<')
+    time.sleep(foo.serialPortPaceDelay)
     return foo.responce
 
+#############################################################################
+# Method
+#
 def serialExpect(foo,cmd,expect):
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'Sending command '+cmd)
-    time.sleep(foo.paceDelay)
+    writeLog(foo.debugCommLevel,'',foo.deviceKind,currentFuncName(),'Sending command '+cmd)
+    time.sleep(foo.serialPortPaceDelay)
     foo.serPort.write(bytes(cmd+'\n','utf8'))
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'    SENT Command  : >'+cmd+'<')
-    time.sleep(foo.paceDelay)
+    writeLog(foo.debugCommLevel,'',foo.deviceKind,currentFuncName(),'    SENT : >'+cmd+'<')
+    time.sleep(foo.serialPortPaceDelay)
     foo.responce=foo.serPort.readline().decode('utf8').strip()
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'    RXED Response : >'+foo.responce+'<')
-    time.sleep(foo.paceDelay)
+    writeLog(foo.debugCommLevel,'',foo.deviceKind,currentFuncName(),'    RXED : >'+foo.responce+'<')
+    time.sleep(foo.serialPortPaceDelay)
     if foo.responce==expect:
-        return True
+        retInfo = True
+        return retInfo
     else:
-        writeLog(foo.debugLevl,"",foo.deviceKind,ptos('    ',cmd+' FAILED expected >'+expect+'< got >'+foo.responce+'<').strip())
-        return False
+        writeLog(foo.verboseLevel,'',foo.deviceKind,currentFuncName(),ptos('    ',cmd+' FAILED expected >'+expect+'< got >'+foo.responce+'<').strip())
+        retInfo = False
+        return retInfo
 
-# def skyxExpect(foo,cmd,MESSAGE,expect):
-
-#     writeLog(foo.debugLevl,"",foo.deviceKind,'Sending command '+cmd)
-#     TCP_IP = '127.0.0.1'
-#     TCP_PORT = 3040
-#     BUFFER_SIZE = 1024
-#     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-#     s.connect((TCP_IP, TCP_PORT))
-
-#     s.send(MESSAGE.encode('utf8'))
-
-#     writeLog(foo.debugLevl,"",foo.deviceKind,'    SENT MESSAGE  : >'+MESSAGE+'<')
-#     foo.responce = s.recv(BUFFER_SIZE).decode('utf8')
-#     s.close()
-#     writeLog(foo.debugLevl,"",foo.deviceKind,'    RXED Response : >'+foo.responce+'<')
-
-#     if expect in foo.responce:
-#         return True
-#     else:
-#         writeLog(foo.debugLevl,"",foo.deviceKind,ptos('    ',cmd+' FAILED expected >'+expect+'< got >'+foo.responce+'<').strip())
-#         return False
-
-def skyXsendCndWithReturn(foo,command: str) -> (bool, str, str):
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'Sent command '+command)
+#############################################################################
+# Method
+#
+def skyXcmd(foo,command: str,allowErrors):
     command_packet = "/* Java Script */" \
                      + "/* Socket Start Packet */" \
                      + command \
                      + "/* Socket End Packet */"
-    (success, returned_result, message) = send_command_packet(foo,command_packet)
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'Rxed >'+js_bool(success)+'< >'+returned_result+'< >'+message+'<')
-    return success, returned_result, message
+    result = skyXsndPkt(foo,command_packet)
+    if not allowErrors:
+        if not skyXchkIsOk(result):
+            ExcMsg="Exception in " + foo.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',foo.deviceKind,currentFuncName(),ExcMsg)
+            writeLog(True,'',foo.deviceKind,currentFuncName(),command_packet)
+            writeLog(True,'',foo.deviceKind,currentFuncName(),result)
+            raise Exception(ExcMsg)            
+    return result
 
-def skyXsendCndWithNoReturn(foo,command: str):
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'Sent command '+command)
-    command_packet = "/* Java Script */" \
-                      + "/* Socket Start Packet */" \
-                      + command \
-                      + "/* Socket End Packet */"
-    (success, returned_result, message) = send_command_packet(foo,command_packet)
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'Rxed >'+js_bool(success)+'< >'+returned_result+'< >'+message+'<')
-    return success, message
-
-def send_command_packet(foo,command_packet: str):
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'Sent command '+command_packet)
-    result = ""
-    success = False
-    message = ""
+#############################################################################
+# Method
+#
+def skyXsndPkt(foo,command_packet: str):
+    result = ''
     address_tuple = ('127.0.0.1', 3040)
-    #TheSkyX._server_mutex.lock()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as the_socket:
         try:
             the_socket.connect(address_tuple)
             bytes_to_send = bytes(command_packet, 'utf-8')
+            writeLog(foo.debugCommLevel,'',foo.deviceKind,currentFuncName(),'    SENT : >'+command_packet+'<')
             the_socket.sendall(bytes_to_send)
+            writeLog(foo.debugCommLevel,'',foo.deviceKind,currentFuncName(),'    socket.sendall returned, calling socket.recv')
             returned_bytes = the_socket.recv(1024)
-            result_lines = returned_bytes.decode('utf=8') + "\n"
-            #writeLog(foo.debugCommLevel,"",foo.deviceKind,'Rxed >'+result_lines+'<')
-            parsed_lines = result_lines.split("\n")
-            if len(parsed_lines) > 0:
-                result = parsed_lines[0]
-                success = True
+            result = returned_bytes.decode('utf=8')
+            writeLog(foo.debugCommLevel,'',foo.deviceKind,currentFuncName(),'    RXED : >'+result+'<')
         except:
-            ExcMsg="Exception in " + foo.deviceKind + " unexpected error in Stop"
-            writeLog(True,"",foo.deviceKind,ExcMsg)
+            ExcMsg="Exception in " + foo.deviceKind + " unexpected error in "+currentFuncName()
+            writeLog(True,'',foo.deviceKind,currentFuncName(),ExcMsg)
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            writeLog(True,'',foo.deviceKind,currentFuncName(),f'Exception type : {ex_type.__name__}')
+            writeLog(True,'',foo.deviceKind,currentFuncName(),f'Exception message : {ex_value}')
+            writeLog(True,'',foo.deviceKind,currentFuncName(),f'Stack trace : {stack_trace}')
             raise Exception(ExcMsg)
-    #TheSkyX._server_mutex.unlock()
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'Rxed success >'+js_bool(success)+'<')
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'Rxed result  >'+result+'<')
-    writeLog(foo.debugCommLevel,"",foo.deviceKind,'Rxed message >'+message+'<')
-    if ('SyntaxError:' in result) or ('TypeError:' in result) or ('ReferenceError:' in result) :
-        ExcMsg="Exception in " + foo.deviceKind + " " + result
-        writeLog(True,"",foo.deviceKind,ExcMsg)
-        raise Exception(ExcMsg)
-    time.sleep(foo.paceDelay)
-    return success, result, message
+    time.sleep(foo.theSkyXPaceDelay)
+    return result
 
-
-def check_for_error_in_return_value(returned_text: str) -> (bool, str):
-    """Check for TheSkyX errors that are encoded in the return value string"""
-    returned_text_upper = returned_text.upper()
+#############################################################################
+# Method
+#
+def skyXchkIsOk(result: str):
+    ''"Check for TheSkyX errors that are encoded in the return value string''"
     success = False
-    message = ""
-    if returned_text_upper.startswith("TYPEERROR: PROCESS ABORTED"):
-        message = "Camera Aborted"
-    elif returned_text_upper.startswith("TYPEERROR:"):
-        message = returned_text
-    elif returned_text_upper.startswith("TYPEERROR: CFITSIO ERROR"):
-        message = "File save folder doesn't exist or not writeable"
-    else:
+    if '0|No error. Error = 0.' in result :
         success = True
-    return success, message
-
-def js_bool(value: bool) -> str:
+    elif 'undefined|No error. Error = 0.' in result :
+        success = True    
+    elif 'false|No error. Error = 0.' in result :
+        success = True
+    return success
+    
+#############################################################################
+# Method
+#
+def js_bool(value: bool):
     return "true" if value else "false"
 
+#############################################################################
+# Method
+#
 def getProcessRunning(processName):
     #Iterate over the all the running process
     for proc in psutil.process_iter():
@@ -3147,20 +4774,29 @@ def getProcessRunning(processName):
                 return proc
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
-    return False;
+    retInfo = False
+    return retInfo
 
 
+#############################################################################
+# Method
+#
 def checkIfProcessRunning(processName):
     #Iterate over the all the running process
     for proc in psutil.process_iter():
         try:
             # Check if process name contains the given name string.
             if processName.lower() in proc.name().lower():
-                return True
+                retInfo = True
+                return retInfo
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
-    return False;
+    retInfo = False
+    return retInfo
 
+#############################################################################
+# Method
+#
 def generateSaveFileName(frameType,temp,objName,filterName,exposure,binning,sequence):
     dateStamp = Time.now().strftime("%Y%m%d-%H%M%S")
     saveFileName = f'{frameType} {int(temp)}C {objName} {filterName} {exposure}s {binning}bin #{sequence:03d} {dateStamp}.fit'

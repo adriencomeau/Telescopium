@@ -9,57 +9,73 @@ This is a temporary script file.
 import telescopium
 
 observatory = telescopium.Observatory()
-telescopiumMainControl=observatory.getTelescopiumMainControl()
-telescopiumMainControl['debugCommLevel']        = True     # (False) True to log serial traffic
- 
-observatory.minimumSafeToHomeAngle      = telescopiumMainControl['minimumSafeToHomeAngle']
-observatory.usableHorizon               = telescopiumMainControl['usableHorizon']
-observatory.wxMonitorTempThreshold      = telescopiumMainControl['wxMonitorTempThreshold']
-observatory.normalScheduling            = telescopiumMainControl['normalScheduling']
-observatory.manualObservation           = telescopiumMainControl['manualObservation']
-observatory.telescopiumLibraryPath      = telescopiumMainControl['telescopiumLibraryPath']
-observatory.flatSpotAltitude            = telescopiumMainControl['flatSpotAltitude']
-observatory.homeLocAlt                  = telescopiumMainControl['homeLocAlt']
-observatory.homeLocAz                   = telescopiumMainControl['homeLocAz']
-observatory.sunDownDegrees              = telescopiumMainControl['sunDownDegrees']
-observatory.moonDownDegrees             = telescopiumMainControl['moonDownDegrees']
+observatory.getMainControl()
 
-observatory.setDebugLevel(True)
+observatory.startTheSkyX()
 
-observatory.startTheSkyX(telescopiumMainControl['getNewInstance'],telescopiumMainControl['theSkyProc'],telescopiumMainControl['theSkyApp'])
+observatory.setPathsForTonight()
+
+observatory.startDcPowerSwitch()
+observatory.setAllSwOn()
 
 ###############################################################################
 # Start MainCamera
 #
-
-observatory.startMainCamera(telescopiumMainControl)
+observatory.startMainCamera()
 
 ###############################################################################
 # Start MainFilter
-#   Queries Number of filter slots
-#   Gathers the names of the filters (R,G,B,etc)
 #
-observatory.startMainFilter(telescopiumMainControl)
+observatory.startMainFilter()
 
-for ndx in range(observatory.mainFilter.numbFilters):
-    exposure        = 1
-    binning         = 2
-    imageReduction  = 2
-    imageReduction  = 0
-    autoSaveFile    = False
-    asyncMode       = False
-    observatory.mainFilter.setFilterByNdx(ndx)
-    observatory.mainCamera.takeLightFrame(exposure,binning,imageReduction,autoSaveFile,asyncMode)
+if True:
+    frameType       = 'Light'
+    tempSetPoint    = int(observatory.mainCamera.getTempSetPoint())
 
-for ndx in ['R','G','B','L','SII','OIII','Ha']:
-    exposure        = 1
-    binning         = 2
-    imageReduction  = 2
-    imageReduction  = 0
+    exposure        = 0.01
+    binning         = 1
+
+    filterName      = 'OSC'
+
+    reductionKind   = 'None'
+    reductionGrp    = f'{tempSetPoint}C_{filterName}_{exposure}s_{binning}bin'
+ 
     autoSaveFile    = False
-    asyncMode       = False
-    observatory.mainFilter.setFilterByName(ndx)
-    observatory.mainCamera.takeLightFrame(exposure,binning,imageReduction,autoSaveFile,asyncMode)
+    asyncMode       = True
+
+    for sequenceNdx in range(10):
+        observatory.mainFilter.setFilterByName(filterName)
+        observatory.mainCamera.takeImage(frameType,exposure,binning,reductionKind,reductionGrp,autoSaveFile,asyncMode)
+        while not observatory.mainCamera.isComplete():
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'{observatory.mainCamera.getExpStatus()}')
+            observatory.sleep(1)    
+        objName         = 'NoObject'
+        observatory.mainCamera.saveImgToFile(observatory.filePathLights,frameType,tempSetPoint,objName,filterName,exposure,binning,sequenceNdx)
+
+
+
+if False:
+    for ndx in range(observatory.mainFilter.numbFilters):
+        frameType       = 'Light'
+        exposure        = 1
+        binning         = 2
+        reductionKind   = 'No'
+        reductionGrp    = ''
+        autoSaveFile    = False
+        asyncMode       = False
+        observatory.mainFilter.setFilterByNdx(ndx)
+        observatory.mainCamera.takeImage(frameType,exposure,binning,reductionKind,reductionGrp,autoSaveFile,asyncMode)
+    
+    for ndx in ['R','G','B','L','SII','OIII','Ha']:
+        frameType       = 'Light'
+        exposure        = 1
+        binning         = 2
+        reductionKind   = 'No'
+        reductionGrp    = ''
+        autoSaveFile    = False
+        asyncMode       = False
+        observatory.mainFilter.setFilterByName(ndx)
+        observatory.mainCamera.takeImage(frameType,exposure,binning,reductionKind,reductionGrp,autoSaveFile,asyncMode)
 
 
 

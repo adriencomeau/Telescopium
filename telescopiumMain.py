@@ -10,7 +10,10 @@ import pandas as pd
 import telescopium
 import time
 from astropy.time import Time
-import math
+import json
+import sys
+import traceback
+import astropy.units as u
 
 expMin = 1
 expMax = 10
@@ -24,641 +27,920 @@ observatory = telescopium.Observatory()
 
 while True:
     #############################################################################
-    #
     # Initializing
     #
     if observatory.currentState == 'PreCheck':
        try:
             #############################################################################
-            #
             # Set Observatory Object
             #
             observatory = telescopium.Observatory()
-            telescopiumMainControl=observatory.getTelescopiumMainControl()
- 
-            observatory.minimumSafeToHomeAngle      = telescopiumMainControl['minimumSafeToHomeAngle']
-            observatory.usableHorizon               = telescopiumMainControl['usableHorizon']
-            observatory.wxMonitorTempThreshold      = telescopiumMainControl['wxMonitorTempThreshold']
-            observatory.normalScheduling            = telescopiumMainControl['normalScheduling']
-            observatory.manualObservation           = telescopiumMainControl['manualObservation']
-            observatory.telescopiumLibraryPath      = telescopiumMainControl['telescopiumLibraryPath']
-            observatory.flatSpotAltitude            = telescopiumMainControl['flatSpotAltitude']
-            observatory.homeLocAlt                  = telescopiumMainControl['homeLocAlt']
-            observatory.homeLocAz                   = telescopiumMainControl['homeLocAz']
-            observatory.sunDownDegrees              = telescopiumMainControl['sunDownDegrees']
-            observatory.moonDownDegrees             = telescopiumMainControl['moonDownDegrees']
+            observatory.getMainControl()
+            observatory.setPathsForTonight()
 
-            observatory.setDebugLevel(True)
-            observatory.setObsLocation(telescopiumMainControl['lat'],telescopiumMainControl['lon'],0)
+            #############################################################################
+            #
+            #
+            observatory.setObsLocation()
             observatory.calculateNight()
 
-            observatory.startCheese(telescopiumMainControl['getNewInstance'],telescopiumMainControl['webCamProc'],telescopiumMainControl['webCamApp'])
-            observatory.startTheSkyX(telescopiumMainControl['getNewInstance'],telescopiumMainControl['theSkyProc'],telescopiumMainControl['theSkyApp'])
-   
-            observatory.startWxMonitor(telescopiumMainControl)
-            observatory.startDcPowerSwitch(telescopiumMainControl)
-            observatory.setAllSwOff(telescopiumMainControl['sleepForAllOff'])
-            observatory.setAllSwOn(telescopiumMainControl['leaveLightOn'],telescopiumMainControl['sleepForAllOn'])
-            
-            observatory.startDomeController(telescopiumMainControl)
-            observatory.startParkDetector(telescopiumMainControl)
-            
-            observatory.startMount(telescopiumMainControl)
-            observatory.startMainCamera(telescopiumMainControl)
-            observatory.startMainFilter(telescopiumMainControl)
-            observatory.startFocuser(telescopiumMainControl)
-            observatory.startGuider(telescopiumMainControl)
+            #############################################################################
+            # Start Webcam and TheSkyX
+            #
+            observatory.startCheese()
+            observatory.startTheSkyX()
 
-            observatory.stopCheese(telescopiumMainControl['webCamProc'],telescopiumMainControl['webCamApp'])
-            observatory.stopTheSkyX(telescopiumMainControl['theSkyProc'],telescopiumMainControl['theSkyApp'])
-            observatory.setAllSwOff(telescopiumMainControl['sleepForAllOff'])
-            observatory.closePorts()
+            #############################################################################
+            # Start items not needed to be powered up and Cycle Power
+            #
+            observatory.startWxMonitor()
+            observatory.startDcPowerSwitch()
+            observatory.setAllSwOff()
+            observatory.setAllSwOn()
 
-            observatory.currentState = 'Initializing';
-            telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
+            #############################################################################
+            # Start items needed to be powered up
+            #
+            observatory.startDomeController()
+            observatory.startParkDetector()
+            observatory.startMainCamera()
+            observatory.startMainFilter()
+            observatory.startFocuser()
+            observatory.startGuider()
+
+            #############################################################################
+            # incase the observatory was left in non-closed, non-parked call the solver
+            #
+            if observatory.solveUnkState():
+                #############################################################################
+                # stop and close ports
+                #
+                observatory.stopCheese()
+                observatory.stopTheSkyX()
+                observatory.setAllSwOff()
+                observatory.closePorts()
+    
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to Initializing state')
+                observatory.currentState = 'Initializing';
+            else:
+                observatory.setAllSwOff()
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Exit main loop, solveUnkState failed')
+                break
        except:
             thisPanicState = observatory.currentState
-            telescopium.writeLog(True,observatory.currentState,'',f'Something went wrong in {observatory.currentState} state code')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
             observatory.currentState = 'PANIC';
-
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
 
     #############################################################################
-    #
     # Initializing
     #
     if observatory.currentState == 'Initializing':
         try:
             #############################################################################
             # Set Observatory Object
+            #
             observatory = telescopium.Observatory()
             observatory.currentState = 'Initializing';
-            telescopiumMainControl=observatory.getTelescopiumMainControl()
+            observatory.getMainControl()
+            observatory.setPathsForTonight()
 
-            observatory.minimumSafeToHomeAngle      = telescopiumMainControl['minimumSafeToHomeAngle']
-            observatory.usableHorizon               = telescopiumMainControl['usableHorizon']
-            observatory.wxMonitorTempThreshold      = telescopiumMainControl['wxMonitorTempThreshold']
-            observatory.normalScheduling            = telescopiumMainControl['normalScheduling']
-            observatory.manualObservation           = telescopiumMainControl['manualObservation']
-            observatory.telescopiumLibraryPath      = telescopiumMainControl['telescopiumLibraryPath']
-            observatory.flatSpotAltitude            = telescopiumMainControl['flatSpotAltitude']
-            observatory.homeLocAlt                  = telescopiumMainControl['homeLocAlt']
-            observatory.homeLocAz                   = telescopiumMainControl['homeLocAz']
-            observatory.sunDownDegrees              = telescopiumMainControl['sunDownDegrees']
-            observatory.moonDownDegrees             = telescopiumMainControl['moonDownDegrees']
-
-            observatory.setDebugLevel(True)
-            observatory.setObsLocation(telescopiumMainControl['lat'],telescopiumMainControl['lon'],0)
+            #############################################################################
+            #
+            #
+            observatory.setObsLocation()
             observatory.calculateNight()
-            telescopium.writeLog(True,observatory.currentState,'','Initializing Observatory')
 
-            observatory.startCheese(telescopiumMainControl['getNewInstance'],telescopiumMainControl['webCamProc'],telescopiumMainControl['webCamApp'])
-            observatory.startTheSkyX(telescopiumMainControl['getNewInstance'],telescopiumMainControl['theSkyProc'],telescopiumMainControl['theSkyApp'])
+            #############################################################################
+            # Start Webcam and TheSkyX
+            #
+            observatory.startCheese()
+            observatory.startTheSkyX()
 
             observatory.loadFlatExpBlkList()
-            telescopium.writeLog(True,observatory.currentState,'','Making resuts data frame')
             flatDataFrame=pd.DataFrame(columns=['indexInflatExpBlk','exp','imgAvgADU','expProj','done'])
             flatDataFrame['indexInflatExpBlk']=observatory.flatExpBlk.index.values
             flatDataFrame['done']=False
 
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to IdlePM state')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Waiting until {(observatory.timetoEnter_PoweredUp-observatory.hourOffset*u.hour).strftime("%Y-%m-%d %H:%M:%S")}')
             observatory.currentState = 'IdlePM'
-            telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
+            
         except:
             thisPanicState = observatory.currentState
-            telescopium.writeLog(True,observatory.currentState,'',f'Something went wrong in {observatory.currentState} state code')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
             observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
 
     #############################################################################
-    #
     # IdlePM
     #
     if observatory.currentState == 'IdlePM':
-        if Time.now()>observatory.timetoEnter_PoweredUp:
-            try:
-                telescopium.writeLog(True,observatory.currentState,'','Working to enter PoweredUpPM state - Time triggered')
-                observatory.startWxMonitor(telescopiumMainControl)
-                observatory.startDcPowerSwitch(telescopiumMainControl)
-                observatory.setAllSwOff(telescopiumMainControl['sleepForAllOff'])
-                observatory.setAllSwOn(telescopiumMainControl['leaveLightOn'],telescopiumMainControl['sleepForAllOn'])
+        try:
+            if Time.now()>observatory.timetoEnter_PoweredUp:
+                #############################################################################
+                # Start items not needed to be powered up and Cycle Power
+                #
+                observatory.startWxMonitor()
+                observatory.startDcPowerSwitch()
+                observatory.setAllSwOff()
+                observatory.setAllSwOn()
+                
                 observatory.setPathsForTonight()
 
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to PoweredUpPM state')
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Waiting until {(observatory.timetoEnter_AllConnected-observatory.hourOffset*u.hour).strftime("%Y-%m-%d %H:%M:%S")}')
                 observatory.currentState = 'PoweredUpPM';
-                telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-            except:
-                thisPanicState = observatory.currentState
-                telescopium.writeLog(True,observatory.currentState,'',f'Something went wrong in {observatory.currentState} state code')
-                observatory.currentState = 'PANIC';
-        else:
-            telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Waiting %s hms to enter PoweredUpPM state'%(telescopium.deltaTimeTohms((observatory.timetoEnter_PoweredUp-Time.now())))).strip())
+
+        except:
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
+
     #############################################################################
-    #
     # PoweredUpPM
     #
     elif observatory.currentState == 'PoweredUpPM':
-        if telescopiumMainControl['justPowerOn']:
-            observatory.currentState = 'PoweredUpAM';
-            telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-        else:
-            if Time.now()>observatory.timetoEnter_AllConnected:
-                telescopium.writeLog(True,observatory.currentState,'','Working to enter AllConnectedPM state - Time triggered')
-                try:
-                    observatory.startDomeController(telescopiumMainControl)
-                    observatory.startParkDetector(telescopiumMainControl)
-                    observatory.startMount(telescopiumMainControl)
-                    observatory.startMainCamera(telescopiumMainControl)
-                    observatory.startMainFilter(telescopiumMainControl)
-                    observatory.startFocuser(telescopiumMainControl)
-                    observatory.startGuider(telescopiumMainControl)
-
-                    observatory.currentState = 'AllConnectedPM';
-                    telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-                except:
-                    thisPanicState = observatory.currentState
-                    telescopium.writeLog(True,observatory.currentState,'',f'Something went wrong in {observatory.currentState} state code')
-                    observatory.currentState = 'PANIC';
+        try:
+            if observatory.mainControl['justPowerOn']:
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to PoweredUpAM state')
+                observatory.currentState = 'PoweredUpAM';
             else:
-                telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Waiting %s hms to enter AllConnectedPM state'%(telescopium.deltaTimeTohms((observatory.timetoEnter_AllConnected-Time.now())))).strip())
+                if Time.now()>observatory.timetoEnter_AllConnected:
+                    #############################################################################
+                    # Start the items that were powered up
+                    #
+                    observatory.startDomeController()
+                    observatory.startParkDetector()
+                    observatory.startMount()
+                    observatory.startMainCamera()
+                    observatory.startMainFilter()
+                    observatory.startFocuser()
+                    observatory.startGuider()
+
+                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to AllConnectedPM state')
+                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Waiting until {(observatory.timetoEnter_ReadyToOpen-observatory.hourOffset*u.hour).strftime("%Y-%m-%d %H:%M:%S")}')
+                    observatory.currentState = 'AllConnectedPM';
+        except:
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
+
     #############################################################################
-    #
     # AllConnectedPM
     #
     elif observatory.currentState == 'AllConnectedPM':
-        if Time.now()>observatory.timetoEnter_ReadyToOpen:
-            observatory.setCameraTempTarget(telescopiumMainControl['deltaTemp'],telescopiumMainControl['a_list'],telescopiumMainControl['b_list'])
+        try:
+            if Time.now()>observatory.timetoEnter_ReadyToOpen:
+    
+                #############################################################################
+                # Select target CCD temperature
+                # FEATURE ADD:
+                #   * control camera temperature ramp (warm up)
+                #
+                observatory.setCameraTempTarget()
+    
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to ReadyToOpen state')
+                observatory.currentState = 'ReadyToOpen';
+        except:
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
 
-            observatory.currentState = 'ReadyToOpen';
-            telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-        else:
-            telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Waiting %s hms to enter ReadyToOpen state'%(telescopium.deltaTimeTohms((observatory.timetoEnter_ReadyToOpen-Time.now())))).strip())
     #############################################################################
-    #
     # ReadyToOpen
     #
     elif observatory.currentState == 'ReadyToOpen':
-        if Time.now()>observatory.timetoLeave_ReadyToObserve:
-            telescopium.writeLog(True,observatory.currentState,'','Timedout waiting to Wx tobe safe')
-            observatory.currentState = 'AllConnectedAM';
-            telescopium.writeLog(True,observatory.currentState,'',f'Regressing to {observatory.currentState} state')
-        else:
-            if (Time.now()<observatory.timetoEnter_ReadyToFlats) or telescopiumMainControl['forceTakeBias']:
-                if telescopiumMainControl['takeBias']:
-                    telescopium.writeLog(True,observatory.currentState,'','Taking Bias Frames')
-                    #############################################################################
-                    # Run Bias Frames
-                    if telescopiumMainControl['leaveLightOn']:
-                        observatory.dcPowerSwitch.setSwOff(6)
-                    for tempSetPointLocal in telescopiumMainControl['a_list']:
-                        if tempSetPointLocal >= observatory.tempSetPointForTonight:
-                            observatory.mainCamera.setTempSetPoint(True,tempSetPointLocal,True)
-                            for sequenceNdx in range(telescopiumMainControl['numbBiasExp']):
-                                frameType       = 'Bias'
-                                temp            = int(observatory.mainCamera.getTempSetPoint())
-                                objName         = 'noObj'
-                                filterName      = 'OSC'
-                                exposure        = 0
-                                binning         = 1
-                                sequence        = sequenceNdx
-                                autoSaveFile    = False
-                                asyncMode       = False
-                                observatory.mainCamera.takeBiasFrame(binning,autoSaveFile,asyncMode)
-                                observatory.mainCamera.saveImgToFile(observatory.filePathBias,frameType,temp,objName,filterName,exposure,binning,sequence)
-                    telescopiumMainControl['takeBias'] = False
-                    if telescopiumMainControl['leaveLightOn']:
-                        observatory.dcPowerSwitch.setSwOn(6)
-                else:
-                    telescopium.writeLog(True,observatory.currentState,'','bypassing bias frames (not asked for)')
+        try:
+            if Time.now()>observatory.timetoLeave_ReadyToObserve:
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to AllConnectedAM state')
+                observatory.currentState = 'AllConnectedAM';
             else:
-                telescopium.writeLog(True,observatory.currentState,'','Too late to take bias frames\n')
-            if observatory.wxMonitor.isClear():
-                telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Wx is safe, Amb%6.2f Sky%6.2f Diff%6.2f'%(observatory.wxMonitor.ambTemp,observatory.wxMonitor.skyTemp,observatory.wxMonitor.deltaTemp)).strip())
-                try:
-                    telescopium.writeLog(True,observatory.currentState,'','Opening Roof')
+                #if (Time.now()<observatory.timetoEnter_ReadyToFlats):
+                    #if observatory.mainControl['takeBias']:
+                        #############################################################################
+                        # Run Bias Frames
+                        # Does not work because theSkyX forces user intervention to cover the objective.
+                        #
+                        # if observatory.mainControl['leaveLightOn']:
+                        #     observatory.dcPowerSwitch.setSwOff(6)
+                        # for tempSetPointLocal in observatory.mainControl['a_list']:
+                        #     if tempSetPointLocal >= observatory.tempSetPointForTonight:
+                        #         observatory.mainCamera.setTempSetPoint(True,tempSetPointLocal,True,observatory.mainControl['waitTimeMin'])
+                        #         for sequenceNdx in range(observatory.mainControl['numbBiasExp']):
+                        #             frameType       = 'Bias'
+                        #             tempSetPoint    = int(observatory.mainCamera.getTempSetPoint())
+                        #             objName         = 'noObj'
+                        #             filterName      = 'OSC'
+                        #             exposure        = 0
+                        #             binning         = 1
+                        #             sequence        = sequenceNdx
+                        #             autoSaveFile    = False
+                        #             asyncMode       = False
+                        #             observatory.mainCamera.takeImage(frameType,binning,autoSaveFile,asyncMode)
+                        #             observatory.mainCamera.saveImgToFile(observatory.filePathBias,frameType,tempSetPoint,objName,filterName,exposure,binning,sequence)
+                        #observatory.mainControl['takeBias'] = False
+                        #if observatory.mainControl['leaveLightOn']:
+                        #    observatory.dcPowerSwitch.setSwOn(6)
+    
+                #############################################################################
+                # If it is clear open the roof
+                #
+                if observatory.wxMonitor.isClear():
+                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Open roof')
                     observatory.domeController.openRoof()
+                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to Open state')
                     observatory.currentState = 'Open';
-                    telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-                except:
-                    thisPanicState = observatory.currentState
-                    telescopium.writeLog(True,observatory.currentState,'',f'Something went wrong in {observatory.currentState} state code')
-                    observatory.currentState = 'PANIC';
-            else:
-                telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Wx is not safe, Amb%6.2f Sky%6.2f Diff%6.2f'%(observatory.wxMonitor.ambTemp,observatory.wxMonitor.skyTemp,observatory.wxMonitor.deltaTemp)).strip())
+                else:
+                    #telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Weather not clear')
+                    pass                    
+        except:
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
+
     #############################################################################
-    #
     # Open
     #
     elif observatory.currentState == 'Open':
-        if not(observatory.wxMonitor.isClear()):
-            observatory.currentState = 'NeedToClose';
-            telescopium.writeLog(True,observatory.currentState,'',f'Regressing to {observatory.currentState} state')
-        else:
-            if True:
+        try:
+            if not(observatory.wxMonitor.isClear()):
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to NeedToClose state')
+                observatory.currentState = 'NeedToClose';
+            else:    
+                #############################################################################
+                # If it is safe to hmoe, home the mount, and slre to safeCoords and cool camera
+                #
                 if observatory.isSafeToHome():
-                    telescopium.writeLog(True,observatory.currentState,'','is safe to home')
                     if observatory.domeController.isOpen():
-                        try:
-                            telescopium.writeLog(True,observatory.currentState,'','Homeing Mount')
-                            observatory.telescopeMount.home(asyncMode=False)
-                            telescopium.writeLog(True,observatory.currentState,'','Slew to safe position')
-                            observatory.telescopeMount.slewToSafeCoordinates(observatory.obsLocation)
-                            observatory.currentState = 'OpenAndHomed';
-                            telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-                        except:
-                            thisPanicState = observatory.currentState
-                            telescopium.writeLog(True,observatory.currentState,'',f'Something went wrong in {observatory.currentState} state code')
-                            observatory.currentState = 'PANIC';
-                else:
-                    telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Is not safe to home mount, waiting for sun seperation %6.3f > %2.0f '%(observatory.k,observatory.minimumSafeToHomeAngle)).strip())
-            else:
-                telescopium.writeLog(True,observatory.currentState,'','Home not needed')
-                telescopium.writeLog(True,observatory.currentState,'','Slew to safe position')
-                observatory.telescopeMount.gotoSafeCoordinates(observatory.obsLocation)
-                observatory.currentState = 'OpenAndHomed';
-                telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
+                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Home mount')
+                        observatory.telescopeMount.home(asyncMode=False)
+
+                        #############################################################################
+                        # Slew to safe position if need to wait to enter ready to observe
+                        #
+                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Slew to safe coordinates')
+                        observatory.telescopeMount.slewToSafeCoord(observatory.obsLocation)
+
+                        #############################################################################
+                        # Set and wait for mainCamera to cool
+                        #
+                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Set main camera temperature set point')
+                        observatory.mainCamera.setTempSetPoint(True,observatory.tempSetPointForTonight,True,observatory.mainControl['waitTimeMin'])    
+
+                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to OpenAndHomed state')
+                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Waiting until {(observatory.timetoEnter_ReadyToFlats-observatory.hourOffset*u.hour).strftime("%Y-%m-%d %H:%M:%S")}')
+                        observatory.currentState = 'OpenAndHomed';
+
+        except:
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
+
     #############################################################################
-    #
     # OpenAndHomed
     #
     elif observatory.currentState == 'OpenAndHomed':
-        if not(observatory.wxMonitor.isClear()):
-            observatory.currentState = 'NeedToClose';
-            telescopium.writeLog(True,observatory.currentState,'',f'Regressing to {observatory.currentState} state')
-        elif Time.now()>observatory.timetoEnter_ReadyToFlats:
-            observatory.currentState = 'TakeFlats';
-            telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-        else:
-            telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Waiting %s hms to enter TakeFlats state'%(telescopium.deltaTimeTohms((observatory.timetoEnter_ReadyToFlats-Time.now())))).strip())
+        try:
+            if not(observatory.wxMonitor.isClear()):
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to NeedToClose state')
+                observatory.currentState = 'NeedToClose';
+            elif Time.now()>observatory.timetoEnter_ReadyToFlats:
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Waiting until {(observatory.timetoEnter_ReadyToObserve-observatory.hourOffset*u.hour).strftime("%Y-%m-%d %H:%M:%S")}')
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to TakeFlats state')
+                observatory.currentState = 'TakeFlats';
+        except:
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
+
     #############################################################################
-    #
     # Take Flats
     #
     elif observatory.currentState == 'TakeFlats':
-        if not(observatory.wxMonitor.isClear()):
-            observatory.currentState = 'NeedToClose';
-            telescopium.writeLog(True,observatory.currentState,'',f'Regressing to {observatory.currentState} state')
-        elif Time.now()>observatory.timetoEnter_ReadyToObserve:
-            observatory.currentState = 'ReadyToObserve';
-            telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-        elif telescopiumMainControl['takeFlat']:
-            if not(flatDataFrame.done.all()):
-                telescopium.writeLog(True,observatory.currentState,'','Setting Camera temp')
-                observatory.mainCamera.setTempSetPoint(True,observatory.tempSetPointForTonight,True)
-                filePrefix = f"{observatory.tempSetPointForTonight}C"
-                while not(flatDataFrame.done.all()):
-                    telescopium.writeLog(True,observatory.currentState,'','Top of loop')
-                    telescopium.writeLog(True,observatory.currentState,'','Slew to flat')
-                    observatory.calculateFlatSkyLoc()
-                    observatory.slewToFlat()
-                    telescopium.writeLog(True,observatory.currentState,'','updating for current time')
-                    for indexInD, row in flatDataFrame[(flatDataFrame.done==False)].iterrows():
-                        expSeqTemp = observatory.flatExpBlk.loc[flatDataFrame.loc[indexInD,'indexInflatExpBlk']].copy()
-                        expSeqTemp.exp=expMin
-                        expSeqTemp.rep=1
-                        observatory.mainCamera.takeImgSeq(observatory.mainFilter,False,expSeqTemp,observatory.filePathFlats,filePrefix)
-                        imgAvgADU = observatory.mainCamera.getImgAvgADU()
-                        #imgAvgADU = min(65000,(30000+7000*mainFilter.filterNdx[expSeqTemp.filterName])*expSeqTemp.exp)
-                        flatDataFrame.loc[flatDataFrame.index[indexInD], 'exp'] = expSeqTemp.exp
-                        flatDataFrame.loc[flatDataFrame.index[indexInD], 'imgAvgADU'] = imgAvgADU
-                        if (imgAvgADU<0.9*imgAvgADUMax):
-                            flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj']   = flatDataFrame.loc[flatDataFrame.index[indexInD], 'exp']*targetImgAvgADU/imgAvgADU
-                            if flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj']>expMax:
+        try:
+            if not(observatory.wxMonitor.isClear()):
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to NeedToClose state')
+                observatory.currentState = 'NeedToClose';
+            elif Time.now()>observatory.timetoEnter_ReadyToObserve:
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to ReadyToObserve state')
+                observatory.currentState = 'ReadyToObserve';
+            elif observatory.mainControl['takeFlat']:
+                #############################################################################
+                # FEATURE ADD:
+                #   * remake flats for OSC? and filtered?
+                #
+                if False:
+                    exposure = 0.01
+                    tergetADU=20000.0
+                    for sequenceNdx in range(30):
+                        observatory.calculateFlatSkyLoc()
+                        observatory.slewToFlat()
+                        
+                        frameType = 'Flat'
+                        filterName = 'OSC'
+                        binning = 1
+                        reductionKind = 'No'
+                        reductionGrp = ''
+                        autoSaveFile = False
+                        asyncMode = False
+                        observatory.mainFilter.setFilterByName(filterName)
+                        observatory.mainCamera.takeImage(frameType,exposure,binning,reductionKind,reductionGrp,autoSaveFile,asyncMode)
+                        imgAvgADU = float(observatory.mainCamera.getImgAvgADU())
+                        print(f'{filterName} {binning} {imgAvgADU}')
+                        tempSetPoint    = int(observatory.mainCamera.getTempSetPoint())
+                        objName         = 'noObj'
+                        observatory.mainCamera.saveImgToFile(observatory.filePathLights,frameType,tempSetPoint,objName,filterName,exposure,binning,sequenceNdx)
+                        exposure = exposure*tergetADU/imgAvgADU
+
+
+                    if not(flatDataFrame.done.all()):
+                        observatory.mainCamera.setTempSetPoint(True,observatory.tempSetPointForTonight,True,observatory.mainControl['waitTimeMin'])
+                        filePrefix = f"{observatory.tempSetPointForTonight}C"
+                        while not(flatDataFrame.done.all()):
+                            observatory.calculateFlatSkyLoc()
+                            observatory.slewToFlat()
+                            for indexInD, row in flatDataFrame[(flatDataFrame.done==False)].iterrows():
+                                expSeqTemp = observatory.flatExpBlk.loc[flatDataFrame.loc[indexInD,'indexInflatExpBlk']].copy()
+                                expSeqTemp.exp=expMin
+                                expSeqTemp.rep=1
+                                observatory.mainCamera.takeImgSeq(observatory.mainFilter,False,expSeqTemp,observatory.filePathFlats,filePrefix)
+                                imgAvgADU = observatory.mainCamera.getImgAvgADU()
+                                flatDataFrame.loc[flatDataFrame.index[indexInD], 'exp'] = expSeqTemp.exp
+                                flatDataFrame.loc[flatDataFrame.index[indexInD], 'imgAvgADU'] = imgAvgADU
+                                if (imgAvgADU<0.9*imgAvgADUMax):
+                                    flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj']   = flatDataFrame.loc[flatDataFrame.index[indexInD], 'exp']*targetImgAvgADU/imgAvgADU
+                                    if flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj']>expMax:
+                                        flatDataFrame.loc[flatDataFrame.index[indexInD], 'done'] = True
+                                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',telescopium.ptos('%-2d %-2d %4.2f %1d %5s %6.1f %4.2f'%(indexInD,flatDataFrame.loc[indexInD,'indexInflatExpBlk'],expSeqTemp.exp,expSeqTemp.bin,expSeqTemp.filterName,imgAvgADU,flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj'])).strip())
+                            canidates = flatDataFrame[(flatDataFrame.expProj>=expMin)&(flatDataFrame.done!=True)].index.values
+                            for indexInD in canidates:
+                                expSeqTemp = observatory.flatExpBlk.loc[flatDataFrame.loc[indexInD,'indexInflatExpBlk']].copy()
+                                expSeqTemp.exp=flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj']
+                                expSeqTemp.rep=1
+                                observatory.mainCamera.takeImgSeq(observatory.mainFilter,False,expSeqTemp,observatory.filePathFlats,filePrefix)
+                                imgAvgADU = observatory.mainCamera.getImgAvgADU()
+                                #imgAvgADU = min(65000,(30000+7000*mainFilter.filterNdx[expSeqTemp.filterName])*expSeqTemp.exp)
+                                flatDataFrame.loc[flatDataFrame.index[indexInD], 'exp'] = expSeqTemp.exp
+                                flatDataFrame.loc[flatDataFrame.index[indexInD], 'imgAvgADU'] = imgAvgADU
+                                flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj']   = flatDataFrame.loc[flatDataFrame.index[indexInD], 'exp']*targetImgAvgADU/imgAvgADU
+                                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',telescopium.ptos('%-2d %-2d %4.2f %1d %5s %6.1f %4.2f'%(indexInD,flatDataFrame.loc[indexInD,'indexInflatExpBlk'],expSeqTemp.exp,expSeqTemp.bin,expSeqTemp.filterName,imgAvgADU,flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj'])).strip())
+                                expSeqTemp = observatory.flatExpBlk.loc[flatDataFrame.loc[indexInD,'indexInflatExpBlk']].copy()
+                                expSeqTemp.exp=flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj']
+                                observatory.mainCamera.takeImgSeq(observatory.mainFilter,True,expSeqTemp,observatory.filePathFlats,filePrefix)
                                 flatDataFrame.loc[flatDataFrame.index[indexInD], 'done'] = True
-                            telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('%-2d %-2d %4.2f %1d %5s %6.1f %4.2f'%(indexInD,flatDataFrame.loc[indexInD,'indexInflatExpBlk'],expSeqTemp.exp,expSeqTemp.bin,expSeqTemp.filterName,imgAvgADU,flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj'])).strip())
-                    telescopium.writeLog(True,observatory.currentState,'','picking canidates')
-                    canidates = flatDataFrame[(flatDataFrame.expProj>=expMin)&(flatDataFrame.done!=True)].index.values
-                    telescopium.writeLog(True,observatory.currentState,'','running canidates')
-                    for indexInD in canidates:
-                        expSeqTemp = observatory.flatExpBlk.loc[flatDataFrame.loc[indexInD,'indexInflatExpBlk']].copy()
-                        expSeqTemp.exp=flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj']
-                        expSeqTemp.rep=1
-                        observatory.mainCamera.takeImgSeq(observatory.mainFilter,False,expSeqTemp,observatory.filePathFlats,filePrefix)
-                        imgAvgADU = observatory.mainCamera.getImgAvgADU()
-                        #imgAvgADU = min(65000,(30000+7000*mainFilter.filterNdx[expSeqTemp.filterName])*expSeqTemp.exp)
-                        flatDataFrame.loc[flatDataFrame.index[indexInD], 'exp'] = expSeqTemp.exp
-                        flatDataFrame.loc[flatDataFrame.index[indexInD], 'imgAvgADU'] = imgAvgADU
-                        flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj']   = flatDataFrame.loc[flatDataFrame.index[indexInD], 'exp']*targetImgAvgADU/imgAvgADU
-                        telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('%-2d %-2d %4.2f %1d %5s %6.1f %4.2f'%(indexInD,flatDataFrame.loc[indexInD,'indexInflatExpBlk'],expSeqTemp.exp,expSeqTemp.bin,expSeqTemp.filterName,imgAvgADU,flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj'])).strip())
-                        expSeqTemp = observatory.flatExpBlk.loc[flatDataFrame.loc[indexInD,'indexInflatExpBlk']].copy()
-                        expSeqTemp.exp=flatDataFrame.loc[flatDataFrame.index[indexInD], 'expProj']
-                        observatory.mainCamera.takeImgSeq(observatory.mainFilter,True,expSeqTemp,observatory.filePathFlats,filePrefix)
-                        flatDataFrame.loc[flatDataFrame.index[indexInD], 'done'] = True
-                    telescopium.writeLog(True,observatory.currentState,'','pace delay at bottom of loop')
-                    time.sleep(10)
-            else:
-                telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Waiting %s hms to enter ReadyToObserve state'%(telescopium.deltaTimeTohms((observatory.timetoEnter_ReadyToObserve-Time.now())))).strip())
-        else:
-            telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Waiting %s hms to enter ReadyToObserve state'%(telescopium.deltaTimeTohms((observatory.timetoEnter_ReadyToObserve-Time.now())))).strip())
+                            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','pace delay at bottom of loop')
+                            time.sleep(10)
+        except:
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
+
     #############################################################################
-    #
     # ReadyToObserve
     #
     elif observatory.currentState == 'ReadyToObserve':
-         if not(observatory.wxMonitor.isClear()):
-            observatory.currentState = 'NeedToClose';
-            telescopium.writeLog(True,observatory.currentState,'',f'Regressing to {observatory.currentState} state')
-         elif Time.now()>observatory.timetoLeave_ReadyToObserve:
-            telescopium.writeLog(True,observatory.currentState,'','Working to enter AllConnectedAM state - Time triggered')
-            telescopium.writeLog(True,observatory.currentState,'','Parking Mount')
-            observatory.telescopeMount.parkAndDoNotDisconnect()
-            if observatory.parkDetector.isParked():
-                if not telescopiumMainControl['leaveOpen']:
-                    try:
-                        telescopium.writeLog(True,observatory.currentState,'','Closing Roof')
+        try:
+            if not(observatory.wxMonitor.isClear()):
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to NeedToClose state')
+                observatory.currentState = 'NeedToClose';
+            elif Time.now()>observatory.timetoLeave_ReadyToObserve:
+               observatory.telescopeMount.parkAndDoNotDisconnect()
+               if observatory.parkDetector.isParked():
+                    if not observatory.mainControl['leaveOpen']:
                         observatory.domeController.closeRoof()
-                    except:
-                        thisPanicState = observatory.currentState
-                        telescopium.writeLog(True,observatory.currentState,'',f'Something went wrong in {observatory.currentState} state code')
-                        observatory.currentState = 'PANIC';
-                observatory.currentState = 'AllConnectedAM';
-                telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-         else:
-            telescopium.writeLog(True,observatory.currentState,'',f'Setting Camera cooler for tonight {observatory.tempSetPointForTonight}')
-            observatory.mainCamera.setTempSetPoint(True,observatory.tempSetPointForTonight,True)
-            if telescopiumMainControl['lookForJobs']:
-                observatory.loadWorkList()
-                if observatory.chooseWorkItem(mode='maxAlt'):
-                    observatory.currentState = 'Observing'
-                    telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-                else:
-                    telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('No Job found, Highest target is %5.3f of %5.3f\n'%(max(observatory.workList.loc[(observatory.workList.done==0)].alt),observatory.usableHorizon)).strip())
+                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to AllConnectedAM state')
+                    observatory.currentState = 'AllConnectedAM';
+            else:    
+               #############################################################################
+               # load the work list
+               #
+               if observatory.mainControl['lookForJobs']:
+                   observatory.loadWorkList()
+    
+                   #############################################################################
+                   # Choose a work item
+                   #
+                   if observatory.chooseWorkItem():
+                       telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to Observing state')
+                       observatory.currentState = 'Observing'
+        except:
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
+
     #############################################################################
-    #
     # Observing
     #
     elif observatory.currentState == 'Observing':
-         if not(observatory.wxMonitor.isClear()):
-            observatory.currentState = 'NeedToClose';
-            telescopium.writeLog(True,observatory.currentState,'',f'Regressing to {observatory.currentState} state')
-         else:
-            telescopium.writeLog(True,observatory.currentState,'','Executing job\n')
-            
-            telescopium.writeLog(True,observatory.currentState,'','Slewing Mount\n')
-            observatory.telescopeMount.slewToRaDec(observatory.workList.loc[observatory.workItemRowNdx].skyCoordRaHrsJNow,observatory.workList.loc[observatory.workItemRowNdx].skyCoordDecValJNow,False)
-
-            telescopium.writeLog(True,observatory.currentState,'','Focus run\n')
-            observatory.runFocus()
-
-            telescopium.writeLog(True,observatory.currentState,'','Slewing Mount\n')
-            observatory.telescopeMount.slewToRaDec(observatory.workList.loc[observatory.workItemRowNdx].skyCoordRaHrsJNow,observatory.workList.loc[observatory.workItemRowNdx].skyCoordDecValJNow,False)
-
-            telescopium.writeLog(True,observatory.currentState,'','Pointing Correction\n')
-            observatory.pointingCorrection()
-
-            for sequenceNdx in range(observatory.workList.loc[observatory.workItemRowNdx].Rep):                   
-                if not(observatory.wxMonitor.isClear()):
-                   observatory.currentState = 'NeedToClose';
-                   telescopium.writeLog(True,observatory.currentState,'',f'Regressing to {observatory.currentState} state')
-                   break
-               
-                # dither can use jog but guideing will erace the move?
-                #observatory.dither()
-
-                if sequenceNdx>0 and observatory.workList.loc[observatory.workItemRowNdx].focusBeforeEachExposure:
-                    telescopium.writeLog(True,observatory.currentState,'','Focus run\n')
-                    observatory.runFocus()
-                
-                observatory.guider.setExposure(4)
-                observatory.guider.takeImage()
-                observatory.guider.findStar()
-                observatory.guider.start()
-                #
-                # wait for N good corrections
-                #
-
-                frameType       = 'Light'
-                temp            = int(observatory.mainCamera.getTempSetPoint())
-                objName         = observatory.workList.loc[observatory.workItemRowNdx].objName
-                filterName      = 'OSC'
-                exposure        = observatory.workList.loc[observatory.workItemRowNdx].Exp
-                binning         = observatory.workList.loc[observatory.workItemRowNdx].bin
-
-                # I dont have control of calibration groups.
-                imageReduction  = 2
-                imageReduction  = 0
-                sequence        = sequenceNdx
-                autoSaveFile    = False
-                asyncMode       = False
-
-                if telescopiumMainControl['leaveLightOn']: observatory.dcPowerSwitch.setSwOff(6)
-
-                observatory.mainCamera.takeLightFrame(exposure,binning,imageReduction,autoSaveFile,asyncMode)
-
-                if telescopiumMainControl['leaveLightOn']: observatory.dcPowerSwitch.setSwOn(6)
-
-                observatory.mainCamera.saveImgToFile(observatory.filePathLights,frameType,temp,objName,filterName,exposure,binning,sequence)
-                # does this place result back in image file?
-                returnInfo=observatory.plateSolve()
-                actualRaHrs  = returnInfo['imageCenterRAJ2000']
-                actualDecVal = returnInfo['imageCenterDecJ2000']
-                deltaRaMin   = (actualRaHrs -observatory.workList.loc[observatory.workItemRowNdx].skyCoordRaHrsJ2000 )*60*(360/24)*math.cos(returnInfo['imageCenterDecJ2000']*math.pi/180.0)
-                deltaDecMin  = (actualDecVal-observatory.workList.loc[observatory.workItemRowNdx].skyCoordDecValJ2000)*60
-                telescopium.writeLog(True,observatory.currentState,'',f'{observatory.workList.loc[observatory.workItemRowNdx].skyCoordRaHrsJ2000},{actualRaHrs},{deltaRaMin}')
-                telescopium.writeLog(True,observatory.currentState,'',f'{observatory.workList.loc[observatory.workItemRowNdx].skyCoordDecValJ2000},{actualDecVal},{deltaDecMin}')
-
-                observatory.guider.stop()
-
-                x=1/0
-
-            if observatory.currentState == 'NeedToClose':
-                pass
+        try:
+            if not(observatory.wxMonitor.isClear()):
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to NeedToClose state')
+                observatory.currentState = 'NeedToClose';
             else:
-                telescopium.writeLog(True,observatory.currentState,'',f'Mark {observatory.workList.loc[observatory.workItemRowNdx].objName} as done\n')
-                observatory.workList.loc[observatory.workItemRowNdx,'done']=1
-                observatory.workList.to_excel(observatory.telescopiumLibraryPath +'workList.ods',index=False)
-    
-                if observatory.workList.loc[observatory.workItemRowNdx,'done']==1:
+
+                #############################################################################
+                # Slew to object
+                #
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Slew to object')
+                observatory.telescopeMount.slewToRaDec(observatory.workList.loc[observatory.workItemRowNdx].skyCoordRaHrsJNow,observatory.workList.loc[observatory.workItemRowNdx].skyCoordDecValJNow,False)
+
+                #############################################################################
+                # Run focus
+                # FEATURE ADD:
+                #   * how to monitor focuser performance
+                #
+                if not observatory.runFocus():
+                    #############################################################################
+                    # handle focus did not work out
+                    #
+                    observatory.workList.loc[observatory.workItemRowNdx,'done']='failed'
+                    observatory.saveWorkList()
+                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to ReadyToObserve state')
                     observatory.currentState = 'ReadyToObserve';
-                    telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
+                else:
+                    #############################################################################
+                    # Return to object
+                    #
+                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Slew (return) to object')
+                    observatory.telescopeMount.slewToRaDec(observatory.workList.loc[observatory.workItemRowNdx].skyCoordRaHrsJNow,observatory.workList.loc[observatory.workItemRowNdx].skyCoordDecValJNow,False)
+
+                    #############################################################################
+                    # Do a pointing correction
+                    # FEATURE ADD:
+                    #   * how to monitor pointing correction performance
+                    #
+                    if not observatory.pointingCorrection():
+                        #############################################################################
+                        # handle pointing correction did not work out
+                        #
+                        observatory.workList.loc[observatory.workItemRowNdx,'done']='failed'
+                        observatory.saveWorkList()
+                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to ReadyToObserve state')
+                        observatory.currentState = 'ReadyToObserve';
+                    else:
+                        #############################################################################
+                        # Start Guider
+                        # FEATURE ADD:
+                        #   * how to monitor guider performance?
+                        #
+                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Take guider exposure')
+                        observatory.guider.setExposure(4)
+                        observatory.guider.takeImage()
+                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Find guide star')
+                        if not observatory.guider.findStar():
+                            #############################################################################
+                            # handle no guide star
+                            #
+                            observatory.workList.loc[observatory.workItemRowNdx,'done']='failed'
+                            observatory.saveWorkList()
+                            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to ReadyToObserve state')
+                            observatory.currentState = 'ReadyToObserve';
+                        else:
+                            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Start guider')
+                            if not observatory.guider.start():
+                                #############################################################################
+                                # handle guider start did not work out
+                                #
+                                observatory.workList.loc[observatory.workItemRowNdx,'done']='failed'
+                                observatory.saveWorkList()
+                                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to ReadyToObserve state')
+                                observatory.currentState = 'ReadyToObserve';
+                            else:
+                                #############################################################################
+                                # get the exposure details
+                                #
+                                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Set exposure set')
+                                kBool_o=(not(pd.isna(observatory.workList.loc[observatory.workItemRowNdx].F_o) or (observatory.workList.loc[observatory.workItemRowNdx].done_o.astype(int)==observatory.workList.loc[observatory.workItemRowNdx].Rep_o.astype(int))))
+                                kBool_1=(not(pd.isna(observatory.workList.loc[observatory.workItemRowNdx].F_1) or (observatory.workList.loc[observatory.workItemRowNdx].done_1.astype(int)==observatory.workList.loc[observatory.workItemRowNdx].Rep_j.astype(int))))
+                                kBool_2=(not(pd.isna(observatory.workList.loc[observatory.workItemRowNdx].F_2) or (observatory.workList.loc[observatory.workItemRowNdx].done_2.astype(int)==observatory.workList.loc[observatory.workItemRowNdx].Rep_j.astype(int))))
+                                kBool_3=(not(pd.isna(observatory.workList.loc[observatory.workItemRowNdx].F_3) or (observatory.workList.loc[observatory.workItemRowNdx].done_3.astype(int)==observatory.workList.loc[observatory.workItemRowNdx].Rep_j.astype(int))))
+                                if kBool_o:
+                                    exposure            = observatory.workList.loc[observatory.workItemRowNdx].Exp_o.astype(int)
+                                    binning             = observatory.workList.loc[observatory.workItemRowNdx].Bin_o.astype(int)
+                                    filterName          = observatory.workList.loc[observatory.workItemRowNdx].F_o
+                                    srtNdx              = observatory.workList.loc[observatory.workItemRowNdx].done_o.astype(int)
+                                    endNdx              = observatory.workList.loc[observatory.workItemRowNdx].Rep_o.astype(int)
+                                    maxCount            = ((observatory.mainControl['maxExposureBlock_hr']*3600)/exposure).astype('int')
+                                elif kBool_1:
+                                    exposure        = observatory.workList.loc[observatory.workItemRowNdx].Exp_j.astype(int)
+                                    binning         = observatory.workList.loc[observatory.workItemRowNdx].Bin_j.astype(int)
+                                    filterName      = observatory.workList.loc[observatory.workItemRowNdx].F_1
+                                    srtNdx          = observatory.workList.loc[observatory.workItemRowNdx].done_1.astype(int)
+                                    endNdx          = observatory.workList.loc[observatory.workItemRowNdx].Rep_j.astype(int)
+                                    maxCount        = ((observatory.mainControl['maxExposureBlock_hr']*3600)/exposure).astype('int')
+                                elif kBool_2:
+                                    exposure        = observatory.workList.loc[observatory.workItemRowNdx].Exp_j.astype(int)
+                                    binning         = observatory.workList.loc[observatory.workItemRowNdx].Bin_j.astype(int)
+                                    filterName      = observatory.workList.loc[observatory.workItemRowNdx].F_2
+                                    srtNdx          = observatory.workList.loc[observatory.workItemRowNdx].done_2.astype(int)
+                                    endNdx          = observatory.workList.loc[observatory.workItemRowNdx].Rep_j.astype(int)
+                                    maxCount        = ((observatory.mainControl['maxExposureBlock_hr']*3600)/exposure).astype('int')
+                                elif kBool_3:
+                                    exposure        = observatory.workList.loc[observatory.workItemRowNdx].Exp_j.astype(int)
+                                    binning         = observatory.workList.loc[observatory.workItemRowNdx].Bin_j.astype(int)
+                                    filterName      = observatory.workList.loc[observatory.workItemRowNdx].F_3
+                                    srtNdx          = observatory.workList.loc[observatory.workItemRowNdx].done_3.astype(int)
+                                    endNdx          = observatory.workList.loc[observatory.workItemRowNdx].Rep_j.astype(int)
+                                    maxCount        = ((observatory.mainControl['maxExposureBlock_hr']*3600)/exposure).astype('int')
+                                else:
+                                    raise Exception('shit 1')
+
+                                frameType       = 'Light'
+                                tempSetPoint    = int(observatory.mainCamera.getTempSetPoint())
+                                objName         = observatory.workList.loc[observatory.workItemRowNdx].ObjName
+                                #############################################################################
+                                # FEATURE ADD:
+                                #   * detect if calibration frame group exists and handle if not
+                                #
+                                reductionKind   = 'Full'
+                                reductionGrp    = f'{tempSetPoint}C_{filterName}_{exposure}s_{binning}bin'
+                                autoSaveFile    = False
+                                asyncMode       = True
+                                                                
+                                #############################################################################
+                                # darken the observatory
+                                #
+                                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Darken observatory')
+                                if observatory.mainControl['leaveLightOn']: observatory.dcPowerSwitch.setSwOff(6)
+
+                                for sequenceNdx in range(srtNdx,min(endNdx,srtNdx+maxCount)):
+
+                                    #############################################################################
+                                    # if weather has triggered break sequence loop
+                                    #
+                                    if not(observatory.wxMonitor.isClear()):
+                                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to NeedToClose state')
+                                        observatory.currentState = 'NeedToClose';
+                                        break
+
+                                    #############################################################################
+                                    # if user has requested break sequence loop
+                                    #
+                                    with open(observatory.mainControl['telescopiumLibraryPath']+'telescopium.json', 'r') as f:
+                                      data = json.load(f)
+                                    if(data['stopTelescopium']):
+                                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to ExitMainLoop state')
+                                        observatory.currentState = 'ExitMainLoop';
+                                        break
+
+                                    #############################################################################
+                                    # take image
+                                    #
+                                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Set filter')
+                                    observatory.mainFilter.setFilterByName(filterName)
+                                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Take exposure')
+                                    observatory.mainCamera.takeImage(frameType,exposure,binning,reductionKind,reductionGrp,autoSaveFile,asyncMode)
+                                    terminateReason = 'none' 
+                                    while not observatory.mainCamera.isComplete():
+                                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'{observatory.mainCamera.getExpStatus()}')
+                                        #############################################################################
+                                        # FEATURE ADD:
+                                        #   * need to make this async and monitor guider performance
+                                        #
+                                        observatory.sleep(10)
+
+                                        #############################################################################
+                                        # if weather has triggered break sequence loop
+                                        #
+                                        if not(observatory.wxMonitor.isClear()):
+                                            observatory.mainCamera.abortImage()
+                                            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to NeedToClose state')
+                                            observatory.currentState = 'NeedToClose';
+                                            terminateReason = 'NeedToClose'
+                                            break
+
+                                        #############################################################################
+                                        # if user has requested break sequence loop
+                                        #
+                                        with open(observatory.mainControl['telescopiumLibraryPath']+'telescopium.json', 'r') as f:
+                                          data = json.load(f)
+                                        if(data['stopTelescopium']):
+                                            observatory.mainCamera.abortImage()
+                                            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','User triggered exit')
+                                            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to ExitMainLoop state')
+                                            observatory.currentState = 'ExitMainLoop';
+                                            terminateReason = 'ExitMainLoop'
+                                            break
+
+                                    #############################################################################
+                                    # break sequence loop if triggered
+                                    #
+                                    if terminateReason != 'none':
+                                        break
+
+                                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Save image')
+                                    observatory.mainCamera.saveImgToFile(observatory.filePathLights,frameType,tempSetPoint,objName,filterName,exposure,binning,sequenceNdx)
+
+                                    #############################################################################
+                                    # FEATURE ADD:
+                                    #   * if plate solve fails, mark exposure as failed do not go to PANIC
+                                    #
+                                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Platesolve')
+                                    returnInfo=observatory.plateSolve(0.39*binning)
+                                    if not returnInfo['retCode']:
+                                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,"",'Plate solve failed')
+                                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,"",returnInfo['errorCode'])
+                                    else:
+                                        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,"",'Plate solve succeeded')
+
+                                    #############################################################################
+                                    # save work done
+                                    #
+                                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Record successfull image')
+                                    if kBool_o:
+                                        observatory.workList.loc[observatory.workItemRowNdx,'done_o']=sequenceNdx+1
+                                    elif kBool_1:
+                                        observatory.workList.loc[observatory.workItemRowNdx,'done_1']=sequenceNdx+1
+                                    elif kBool_2:
+                                        observatory.workList.loc[observatory.workItemRowNdx,'done_2']=sequenceNdx+1
+                                    elif kBool_3:
+                                        observatory.workList.loc[observatory.workItemRowNdx,'done_3']=sequenceNdx+1
+                                    else:
+                                        raise Exception('shit 2')
+
+                                    kBool_o=(not(pd.isna(observatory.workList.loc[observatory.workItemRowNdx].F_o) or (observatory.workList.loc[observatory.workItemRowNdx].done_o.astype(int)==observatory.workList.loc[observatory.workItemRowNdx].Rep_o.astype(int))))
+                                    kBool_1=(not(pd.isna(observatory.workList.loc[observatory.workItemRowNdx].F_1) or (observatory.workList.loc[observatory.workItemRowNdx].done_1.astype(int)==observatory.workList.loc[observatory.workItemRowNdx].Rep_j.astype(int))))
+                                    kBool_2=(not(pd.isna(observatory.workList.loc[observatory.workItemRowNdx].F_2) or (observatory.workList.loc[observatory.workItemRowNdx].done_2.astype(int)==observatory.workList.loc[observatory.workItemRowNdx].Rep_j.astype(int))))
+                                    kBool_3=(not(pd.isna(observatory.workList.loc[observatory.workItemRowNdx].F_3) or (observatory.workList.loc[observatory.workItemRowNdx].done_3.astype(int)==observatory.workList.loc[observatory.workItemRowNdx].Rep_j.astype(int))))
+
+                                    if kBool_o or kBool_1 or kBool_2 or kBool_3:
+                                        observatory.workList.loc[observatory.workItemRowNdx,'done']='not done'
+                                    else:
+                                        observatory.workList.loc[observatory.workItemRowNdx,'done']='done'
+                                    observatory.saveWorkList()
+
+                                #############################################################################
+                                # Stop the guider
+                                #
+                                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Stop guider')
+                                observatory.guider.stop()
+
+                                #############################################################################
+                                # light the observatory
+                                #
+                                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Light observatory')
+                                if observatory.mainControl['leaveLightOn']: observatory.dcPowerSwitch.setSwOn(6)
+
+                                #############################################################################
+                                # if nothing happned move to ReadyToObserve to get the next job
+                                #
+                                if observatory.currentState == 'Observing':
+                                    telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to ReadyToObserve state')
+                                    observatory.currentState = 'ReadyToObserve';
+        except:
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
+
     #############################################################################
-    #
     # NeedToClose
     #
     elif observatory.currentState == 'NeedToClose':
-        telescopium.writeLog(True,observatory.currentState,'','Parking Mount')
-        observatory.telescopeMount.parkAndDoNotDisconnect()
-        if observatory.parkDetector.isParked():
-            try:
-                telescopium.writeLog(True,observatory.currentState,'','Closing Roof')
+        try:
+            observatory.telescopeMount.parkAndDoNotDisconnect()
+            if observatory.parkDetector.isParked():
                 observatory.domeController.closeRoof()
-            except:
-                thisPanicState = observatory.currentState
-                telescopium.writeLog(True,observatory.currentState,'',f'Something went wrong in {observatory.currentState} state code')
-                observatory.currentState = 'PANIC';
-        observatory.currentState = 'ReadyToOpen';
-        telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to ReadtToOpen state')
+            observatory.currentState = 'ReadyToOpen';
+        except:
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
+
     #############################################################################
-    #
     # AllConnectedAM
     #
     elif observatory.currentState == 'AllConnectedAM':
-        if Time.now()>observatory.timetoLeave_AllConnected:
-            telescopium.writeLog(True,observatory.currentState,'','Working to enter PoweredUpAM state - Time triggered')
-            if observatory.domeControllerPortOpen:
-                telescopium.writeLog(True,observatory.currentState,'','Closing Dome Controller')
-                observatory.domeController.closePort()
-            if observatory.parkDetectorPortOpen:
-                telescopium.writeLog(True,observatory.currentState,'','Closing Park Detector')
-                observatory.parkDetector.closePort()
-            observatory.currentState = 'PoweredUpAM';
-            telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-        else:
-            telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Waiting %s hms to enter PoweredUpAM state'%(telescopium.deltaTimeTohms((observatory.timetoLeave_AllConnected-Time.now())))).strip())
+        try:
+            if Time.now()>observatory.timetoLeave_AllConnected:
+                if observatory.domeControllerPortOpen:
+                    observatory.domeController.closePort()
+                if observatory.parkDetectorPortOpen:
+                    observatory.parkDetector.closePort()
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to PoweredUpAM state')
+                observatory.currentState = 'PoweredUpAM';
+        except:
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
+
     #############################################################################
-    #
     # PoweredUpAM
     #
     elif observatory.currentState == 'PoweredUpAM':
-        if (Time.now()>observatory.timetoLeave_PoweredUp) or telescopiumMainControl['justPowerOn']:
-            telescopium.writeLog(True,observatory.currentState,'','Working to enter PoweredUpAM state - Time triggered')
-            if not(telescopiumMainControl['leavePowerOn']):
-                telescopium.writeLog(True,observatory.currentState,'','Turn DC Power off')
-                observatory.setAllSwOff(0)
-            if observatory.dcPowerSwitchPortOpen:
-                telescopium.writeLog(True,observatory.currentState,'','Close serial port to DC power switch')
-                observatory.dcPowerSwitch.closePort()
-            observatory.calculateNight()
-            observatory.currentState = 'IdlePM';
-            telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-        else:
-            telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Waiting %s hms to enter IdlePM state'%(telescopium.deltaTimeTohms((observatory.timetoLeave_PoweredUp-Time.now())))).strip())
+        try:
+            if (Time.now()>observatory.timetoLeave_PoweredUp) or observatory.mainControl['justPowerOn']:
+                if not(observatory.mainControl['leavePowerOn']):
+                    observatory.setAllSwOff()
+                if observatory.dcPowerSwitchPortOpen:
+                    observatory.dcPowerSwitch.closePort()
+                observatory.calculateNight()
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to IdlePM state')
+                observatory.currentState = 'IdlePM';
+        except:
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,' '+observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
+
     #############################################################################
-    #
     # PANIC
     #
     elif observatory.currentState == 'PANIC':
-        telescopium.writeLog(True,observatory.currentState,'','Shit, Arrived at PANIC state')
 
         try:
-            telescopium.writeLog(True,observatory.currentState,'','Trying to resolve observaory')
             observatory.closePorts()
             observatory = telescopium.Observatory()
             observatory.currentState = 'PANIC'
-            telescopiumMainControl=observatory.getTelescopiumMainControl()
-            telescopiumMainControl['debugLevel']            = True     # (False) True to log debugging information
-            telescopiumMainControl['leaveLightOn']          = True      # (False)
-
-            observatory.minimumSafeToHomeAngle      = telescopiumMainControl['minimumSafeToHomeAngle']
-            observatory.usableHorizon               = telescopiumMainControl['usableHorizon']
-            observatory.wxMonitorTempThreshold      = telescopiumMainControl['wxMonitorTempThreshold']
-            observatory.normalScheduling            = telescopiumMainControl['normalScheduling']
-            observatory.manualObservation           = telescopiumMainControl['manualObservation']
-            observatory.telescopiumLibraryPath      = telescopiumMainControl['telescopiumLibraryPath']
-            observatory.flatSpotAltitude            = telescopiumMainControl['flatSpotAltitude']
-            observatory.homeLocAlt                  = telescopiumMainControl['homeLocAlt']
-            observatory.homeLocAz                   = telescopiumMainControl['homeLocAz']
-            observatory.sunDownDegrees              = telescopiumMainControl['sunDownDegrees']
-            observatory.moonDownDegrees             = telescopiumMainControl['moonDownDegrees']
-
-            observatory.setDebugLevel(True)
-            observatory.setObsLocation(telescopiumMainControl['lat'],telescopiumMainControl['lon'],0)
-            observatory.calculateNight()
-
-            observatory.startCheese(telescopiumMainControl['getNewInstance'],telescopiumMainControl['webCamProc'],telescopiumMainControl['webCamApp'])
-            observatory.startTheSkyX(telescopiumMainControl['getNewInstance'],telescopiumMainControl['theSkyProc'],telescopiumMainControl['theSkyApp'])
+            observatory.getMainControl()
             observatory.setPathsForTonight()
-            observatory.startWxMonitor(telescopiumMainControl)
-            observatory.startDcPowerSwitch(telescopiumMainControl)
-            observatory.setAllSwOff(telescopiumMainControl['sleepForAllOff'])
-            observatory.setAllSwOn(telescopiumMainControl['leaveLightOn'],telescopiumMainControl['sleepForAllOn'])
-            observatory.startDomeController(telescopiumMainControl)
-            observatory.startParkDetector(telescopiumMainControl)
+            observatory.mainControl['debugLevel']            = True     # (False) True to log debugging information
+            observatory.mainControl['leaveLightOn']          = True      # (False)
+            observatory.setObsLocation()
+            observatory.calculateNight()
+            observatory.startCheese()
+            observatory.startTheSkyX()
+            observatory.startWxMonitor()
+            observatory.startDcPowerSwitch()
+            observatory.setAllSwOff()
+            observatory.setAllSwOn()
+            observatory.startDomeController()
+            observatory.startParkDetector()
 
-            #############################################################################
-            # Start Mount
-
-            domeController_isClosed = observatory.domeController.isClosed()
-            domeController_isOpen = observatory.domeController.isOpen()
-            parkDetector_isParked = observatory.parkDetector.isParked()
-
-            while(not(domeController_isClosed and parkDetector_isParked)):
-                if(domeController_isOpen and parkDetector_isParked):
-                    telescopium.writeLog(True,observatory.currentState,'','Was Open and Parked')
-                    telescopium.writeLog(True,observatory.currentState,'','-> Closing Roof')
-                    observatory.domeController.closeRoof()
-
-                if(domeController_isOpen and not parkDetector_isParked):
-                    telescopium.writeLog(True,observatory.currentState,'','Was Open and Not Parked')
-                    if observatory.isSafeToHome():
-                        telescopium.writeLog(True,observatory.currentState,'','-> Connect Mount')
-                        observatory.startMount(telescopiumMainControl)
-                        telescopium.writeLog(True,observatory.currentState,'','-> Homeing Mount')
-                        observatory.telescopeMount.home(False)
-                        telescopium.writeLog(True,observatory.currentState,'','-> Parking Mount')
-                        observatory.telescopeMount.park()
-                    else:
-                        telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Is not safe to home mount, waiting for sun seperation %6.3f > %2.0f '%(observatory.k,observatory.minimumSafeToHomeAngle)).strip())
-                        telescopium.writeLog(True,observatory.currentState,'','Wait 1 minute')
-                        time.sleep(60)
-
-                if(domeController_isClosed and not parkDetector_isParked):
-                    telescopium.writeLog(True,observatory.currentState,'','Was Closed and Not Parked')
-                    observatory.parkDetector.FrcPPOn()
-                    
-                    if observatory.wxMonitor.isClear() or True:
-                        telescopium.writeLog(True,observatory.currentState,'',telescopium.ptos('Wx is safe, Amb%6.2f Sky%6.2f Diff%6.2f'%(observatory.wxMonitor.ambTemp,observatory.wxMonitor.skyTemp,observatory.wxMonitor.deltaTemp)).strip())
-                        telescopium.writeLog(True,observatory.currentState,'','-> Opening Roof')
-                        observatory.domeController.openRoof()
-                    else:
-                        x=1/0
-                    
-                    telescopium.writeLog(True,observatory.currentState,'','-> Delay for Mount to power up')
-                    time.sleep(10)
-                    observatory.parkDetector.FrcPPOff()
-
-                domeController_isClosed = observatory.domeController.isClosed()
-                domeController_isOpen = observatory.domeController.isOpen()
-                parkDetector_isParked = observatory.parkDetector.isParked()
-
-
-            telescopium.writeLog(True,observatory.currentState,'','Was Closed and Parked!!')
-
-            observatory.stopCheese(telescopiumMainControl['webCamProc'],telescopiumMainControl['webCamApp'])
-            observatory.stopTheSkyX(telescopiumMainControl['theSkyProc'],telescopiumMainControl['theSkyApp'])
-
-
-            telescopium.writeLog(True,observatory.currentState,'','Turn DC Power Off')
-            observatory.setAllSwOff(telescopiumMainControl['sleepForAllOff'])
-
-            observatory.closePorts()
-
-            #
-            # If we have arrived here....
-            #   Parked
-            #   Closed
-            #   Cheese is stopped
-            #   TheSky is stopped
-            #   All powered off
-            #   Comports closed
-            #   observaroty varianle is dispossable
-            #
-
-            observatory = telescopium.Observatory()
-            telescopium.writeLog(True,observatory.currentState,'',f'Advancing to {observatory.currentState} state')
-
-            if thisPanicState == lastPanicState:
-                telescopium.writeLog(True,observatory.currentState,'','seems to be in a failure loop')
+            if observatory.solveUnkState():
+                observatory.stopCheese()
+                observatory.stopTheSkyX()
+                observatory.setAllSwOff()
+                observatory.closePorts()
+                #
+                # If we have arrived here....
+                #   Parked
+                #   Closed
+                #   Cheese is stopped
+                #   TheSky is stopped
+                #   All powered off
+                #   Comports closed
+                #   observaroty varianle is dispossable
+                #
+                observatory = telescopium.Observatory()
+                observatory.getMainControl()
+                observatory.setPathsForTonight()
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Advancing to Initializing state')
+                observatory.currentState = 'Initializing';
+                if thisPanicState == lastPanicState:
+                    break
+                lastPanicState = thisPanicState
+            else:
+                observatory.setAllSwOff()
+                telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Exit main loop, solveUnkState failed')
                 break
-
-            lastPanicState = thisPanicState
-
         except:
-            telescopium.writeLog(True,observatory.currentState,'','Failed to resolve observaory')
-            break
+            thisPanicState = observatory.currentState
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'',f'Something went wrong in {observatory.currentState} state code')
+            observatory.currentState = 'PANIC';
+            ex_type, ex_value, ex_traceback = sys.exc_info()
+            trace_back = traceback.extract_tb(ex_traceback)
+            stack_trace = list()
+            for trace in trace_back:
+                stack_trace.append("File : %s , Line : %d, Func.Name : %s, Message : %s" % (trace[0], trace[1], trace[2], trace[3]))
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception type : {ex_type.__name__}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Exception message : {ex_value}')
+            telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,telescopium.currentFuncName(),f'Stack trace : {stack_trace}')
+
     #############################################################################
-    #
-    # IdleAM
-    #
-    elif observatory.currentState == 'IdleAM':
-        break
-    #############################################################################
-    #
     # State1
     #
     elif observatory.currentState == 'ExitMainLoop':
+        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','Exit main loop')
         break
+
     #############################################################################
+    # Load json for gracefull trigger stop
     #
+    with open(observatory.mainControl['telescopiumLibraryPath']+'telescopium.json', 'r') as f:
+      data = json.load(f)
+      
+      observatory.mainControl['stopTelescopium']= data['stopTelescopium']
+      observatory.mainControl['debugLevel']= data['debugLevel']
+      observatory.mainControl['debugCommLevel']= data['debugCommLevel']      
+      
+    if(observatory.mainControl['stopTelescopium']):
+        telescopium.writeLog(True,observatory.currentState,observatory.deviceKind,'','User triggered exit')
+        observatory.currentState = 'ExitMainLoop';
+    #############################################################################
     # pace delay at rottom of loop
     #
-    observatory.sleep(telescopiumMainControl['sleepAtLoopEnd'])
+    observatory.sleep(observatory.mainControl['sleepAtLoopEnd'])
 
 
 
